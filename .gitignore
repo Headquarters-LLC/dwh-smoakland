@@ -1,0 +1,95 @@
+# -----------------------------
+# 🧠 Smoakland – .gitignore
+# Covers: Airflow project + rulegen utilities
+# -----------------------------
+
+### Python ###
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env
+*.env
+*.env.*
+
+# Jupyter / temp notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# -----------------------------
+# 🪶 Airflow local artifacts
+# -----------------------------
+# Airflow home/logs/db
+airflow.db
+airflow.cfg
+webserver_config.py
+logs/
+dags/__pycache__/
+dags/*.pyc
+dags/generated/
+unittests.log
+*.pid
+
+# Dockerized Airflow volumes
+/tmp/dags
+/tmp/logs
+/tmp/plugins
+
+# -----------------------------
+# 🧱 DuckDB / Local data
+# -----------------------------
+*.duckdb
+*.parquet
+*.sqlite
+*.db
+*.db-shm
+*.db-wal
+
+# Local exports and CSVs
+data/
+*.csv
+*.tsv
+*.xlsx
+*.ods
+
+# -----------------------------
+# 📜 Rulegen artifacts
+# -----------------------------
+# Generated regex outputs
+out/
+# Temporary seeds or sandbox runs
+tmp/
+scratch/
+*.bak
+*.old
+# Intermediate TextFSM runs
+*.fsm.log
+*.fsm.tmp
+
+# Label map caches
+templates/*_label_map.json
+
+# -----------------------------
+# 🧰 Misc & IDE
+# -----------------------------
+# VSCode / JetBrains / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

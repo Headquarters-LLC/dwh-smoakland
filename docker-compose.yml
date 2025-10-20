@@ -1,0 +1,107 @@
+# docker-compose.yml
+# Base stack shared by local (LocalExecutor) and cloud VMs (CeleryExecutor).
+# Executor-specific bits are set in the override files.
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+
+  # NOTE: redis is ONLY added by the celery override (not here).
+
+  airflow-webserver:
+    build: .
+    image: smoakland-airflow:local
+    depends_on:
+      - postgres
+    environment:
+      # Executor is set by overrides (LocalExecutor or CeleryExecutor)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
+      AIRFLOW__SMTP__SMTP_SSL: "False"
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data_samples:/opt/airflow/data_samples
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./tests:/opt/airflow/tests
+      - ./.env:/opt/airflow/.env:ro
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  airflow-scheduler:
+    build: .
+    image: smoakland-airflow:local
+    depends_on:
+      - airflow-webserver
+    environment:
+      # Executor is set by overrides (LocalExecutor or CeleryExecutor)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
+      AIRFLOW__SMTP__SMTP_SSL: "False"
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data_samples:/opt/airflow/data_samples
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./.env:/opt/airflow/.env:ro
+    command: scheduler
+
+  airflow-triggerer:
+    build: .
+    image: smoakland-airflow:local
+    depends_on:
+      - airflow-webserver
+    environment:
+      # Executor is set by overrides (LocalExecutor or CeleryExecutor)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
+      AIRFLOW__SMTP__SMTP_SSL: "False"
+
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./data_samples:/opt/airflow/data_samples
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    command: triggerer
+
+  airflow-init:
+    build: .
+    image: smoakland-airflow:local
+    depends_on:
+      - postgres
+    environment:
+      # Executor is set by overrides (LocalExecutor or CeleryExecutor)
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
+      AIRFLOW__SMTP__SMTP_SSL: "False"
+      
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+    entrypoint: /bin/bash
+    command: >
+      -c "airflow db migrate &&
+          airflow users create --username airflow --password airflow --firstname admin --lastname user --role Admin --email admin@example.com &&
+          echo 'Airflow init done.'"
+
+volumes:
+  postgres-db-volume:

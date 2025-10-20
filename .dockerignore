@@ -1,0 +1,8 @@
+logs/
+__pycache__/
+*.pyc
+.local/
+.env
+.env.*
+*.db
+data_samples/

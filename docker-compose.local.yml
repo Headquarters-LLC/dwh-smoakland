@@ -1,0 +1,23 @@
+# docker-compose.local.yml
+# Local development: LocalExecutor (no Redis, no workers)
+
+services:
+  airflow-webserver:
+    profiles: ["local"]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+  airflow-scheduler:
+    profiles: ["local"]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+  airflow-triggerer:
+    profiles: ["local"]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+
+  airflow-init:
+    profiles: ["local"]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
