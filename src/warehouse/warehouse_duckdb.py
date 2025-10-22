@@ -87,7 +87,9 @@ class DuckDBWarehouse(WarehouseBase):
 
         Also sanitizes dtypes and NULLs to avoid 'nan' strings in numeric columns.
         """
-        if df is None or df.empty:
+        # Always ensure the table exists. Even if df is empty, create it using
+        # the DataFrame schema so downstream readers don't fail.
+        if df is None:
             return
 
         df = self._sanitize_df_for_duckdb(df)
@@ -95,13 +97,51 @@ class DuckDBWarehouse(WarehouseBase):
         df = df.copy()
         df.columns = [str(c) for c in df.columns]
         cols = list(df.columns)
+        if not cols:
+            # Nothing we can do without columns
+            return
         col_list = ", ".join([f'"{c}"' for c in cols])
 
         self.con.register("df", df)
 
+        # Create the table (once) with the proper schema
         self.con.execute(
             f'CREATE TABLE IF NOT EXISTS {table} AS SELECT {col_list} FROM df WHERE 1=0'
         )
+
+        # Normalize critical column types at the DB level (idempotent),
+        # in case an empty DataFrame led DuckDB to default types incorrectly.
+        # Ignore errors if columns are missing.
+        for col, dtype in [
+            ("date", "DATE"),
+            ("week_start", "DATE"),
+            ("week_end", "DATE"),
+            ("ingest_ts", "TIMESTAMP"),
+        ]:
+            if col in cols:
+                try:
+                    self.con.execute(f'ALTER TABLE {table} ALTER COLUMN "{col}" TYPE {dtype} USING CAST("{col}" AS {dtype})')
+                except Exception:
+                    # Best-effort; continue even if type is already correct or cast fails
+                    pass
+
+        # Ensure common text-like columns are VARCHAR to avoid numeric casts
+        base_text_cols = [
+            "bank_source", "bank_account", "subentity", "bank_cc_num",
+            "txn_id", "description", "extended_description", "ingest_batch_id",
+        ]
+        resolved_value_text_cols = [c for c in _RESOLVED_COLS if c in cols]
+        lineage_text_cols = [c for c in cols if c.endswith("_rule_tag") or c.endswith("_source")]
+        text_cols = [c for c in (base_text_cols + resolved_value_text_cols + lineage_text_cols) if c in cols]
+        for c in text_cols:
+            try:
+                self.con.execute(f'ALTER TABLE {table} ALTER COLUMN "{c}" TYPE VARCHAR USING CAST("{c}" AS VARCHAR)')
+            except Exception:
+                pass
+
+        # If there's no data, we're done after ensuring the table exists
+        if df.empty:
+            return
 
         if key_cols:
             key_cols = [str(k) for k in key_cols]
@@ -114,14 +154,14 @@ class DuckDBWarehouse(WarehouseBase):
         return self.con.execute("""
             SELECT *
             FROM core_transactions
-            WHERE date BETWEEN ? AND ?
+            WHERE CAST(date AS DATE) BETWEEN ? AND ?
         """, [start_date, end_date]).fetchdf()
 
     def fetch_core_before(self, start_date) -> pd.DataFrame:
         return self.con.execute("""
             SELECT *
             FROM core_transactions
-            WHERE date < ?
+            WHERE CAST(date AS DATE) < ?
         """, [start_date]).fetchdf()
 
     def upsert_gold_consolidation_week(self, df: pd.DataFrame, week_start, week_end) -> None:
@@ -151,17 +191,72 @@ class DuckDBWarehouse(WarehouseBase):
 
         df = self._sanitize_df_for_duckdb(df)
 
+        # Split columns: keep only resolved + rule_tag in base table; move
+        # *_source and *_confidence to a separate lineage table.
+        all_cols = list(df.columns)
+        lineage_cols = [c for c in all_cols if c.endswith("_source") or c.endswith("_confidence")]
+        base_cols = [c for c in all_cols if c not in lineage_cols]
+
         self.con.execute("CREATE SCHEMA IF NOT EXISTS gold;")
         self.con.register("wdf", df)
 
-        self.con.execute("""
+        # ---------- Base table (no *_source/_confidence) ----------
+        base_col_list = ", ".join([f'"{c}"' for c in base_cols])
+        self.con.execute(
+            f"""
             CREATE TABLE IF NOT EXISTS gold.categorized_bank_cc AS
-            SELECT * FROM wdf WHERE 1=0
-        """)
+            SELECT {base_col_list} FROM wdf WHERE 1=0
+            """
+        )
 
-        self.con.execute("""
+        # If existed with old columns, drop *_source/_confidence from base
+        try:
+            info_df = self.con.execute("PRAGMA table_info('gold.categorized_bank_cc')").fetchdf()
+            to_drop = [c for c in info_df["name"].tolist() if c.endswith("_source") or c.endswith("_confidence")]
+            for col in to_drop:
+                self.con.execute(f'ALTER TABLE gold.categorized_bank_cc DROP COLUMN "{col}"')
+        except Exception:
+            pass
+
+        # Idempotent upsert for week range
+        self.con.execute(
+            """
             DELETE FROM gold.categorized_bank_cc
-            WHERE date BETWEEN ? AND ?
-        """, [week_start, week_end])
+            WHERE CAST(date AS DATE) BETWEEN ? AND ?
+            """,
+            [week_start, week_end],
+        )
+        self.con.execute(
+            f"INSERT INTO gold.categorized_bank_cc ({base_col_list}) SELECT {base_col_list} FROM wdf"
+        )
 
-        self.con.execute("INSERT INTO gold.categorized_bank_cc SELECT * FROM wdf")
+        # ---------- Lineage table: txn_id + *_source/*_confidence ----------
+        if lineage_cols:
+            lineage_select_cols = ", ".join([f'"{c}"' for c in lineage_cols])
+            self.con.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS gold.categorized_bank_cc_lineage AS
+                SELECT "txn_id", {lineage_select_cols} FROM wdf WHERE 1=0
+                """
+            )
+            # Delete existing rows for these txn_id (overwrite semantics)
+            self.con.execute(
+                """
+                DELETE FROM gold.categorized_bank_cc_lineage l
+                USING (SELECT DISTINCT txn_id FROM wdf) s
+                WHERE l.txn_id = s.txn_id
+                """
+            )
+            self.con.execute(
+                f"INSERT INTO gold.categorized_bank_cc_lineage (\"txn_id\", {lineage_select_cols}) "
+                f"SELECT \"txn_id\", {lineage_select_cols} FROM wdf"
+            )
+
+            # ---------- View with full columns (base + lineage) ----------
+            lineage_view_cols = ", ".join([f'l."{c}"' for c in lineage_cols])
+            view_sql = (
+                "CREATE OR REPLACE VIEW gold.v_categorized_bank_cc_full AS "
+                "SELECT b.*, " + (lineage_view_cols + " " if lineage_view_cols else "") +
+                "FROM gold.categorized_bank_cc b LEFT JOIN gold.categorized_bank_cc_lineage l USING (txn_id)"
+            )
+            self.con.execute(view_sql)
