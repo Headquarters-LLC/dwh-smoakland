@@ -52,7 +52,7 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
    docker compose up -d --build
    ```
    Local:
-   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml up -d
+   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.gmail.yml up -d
 
 5. **Access Airflow UI**:
    - URL: [http://localhost:8080](http://localhost:8080)  
@@ -177,3 +177,27 @@ For local development, you can place placeholder values in `.env` and replace th
 ## License
 
 Internal HQ use. Not for redistribution outside Smoakland project.
+
+---
+
+## Email (SMTP)
+
+- For local development, prefer MailHog (no auth):
+  - Start with: `docker compose -f docker-compose.yml -f docker-compose.mailhog.yml up -d`
+  - Use connection `smtp_default` (auto-created) and view emails at `http://localhost:8025`.
+
+- For Gmail (app password) on port 465/SSL:
+  1) Start services with SSL forced and STARTTLS disabled:
+     - `docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.gmail.yml up -d`
+  2) Create the Airflow connection (run inside the webserver container, replace the app password):
+     - `airflow connections add --conn-uri "smtps://USER%40DOMAIN:APP_PASSWORD@smtp.gmail.com:465?from_email=USER%40DOMAIN&timeout=30&smtp_ssl=true" smtp_gmail_465`
+  3) Test from a shell in the container:
+     - `python - <<'PY'
+from airflow.utils.email import send_email
+send_email(['you@example.com'], 'Gmail smoke test', '<b>Hello</b>', conn_id='smtp_gmail_465')
+print('sent')
+PY`
+
+Notes:
+- Do not commit secrets. Rotate the Gmail app password periodically.
+- If your network blocks 465, try port 587 with STARTTLS (`starttls=true`) and remove `docker-compose.gmail.yml` from the stack.

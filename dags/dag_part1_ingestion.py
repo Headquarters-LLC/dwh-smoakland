@@ -241,7 +241,7 @@ with DAG(
         return f"gold.bank_consolidation upserted for {week_start}..{week_end}"
     
     @task(trigger_rule=TriggerRule.ONE_FAILED)
-    def notify_recon():
+    def notify_recon(week_info: dict):
         ti = get_current_context()["ti"]
         ctx = get_current_context()
 
@@ -256,6 +256,7 @@ with DAG(
             ok=False,
             paths={"fail_csv": fail_path, "summary_csv": summary},
             airflow_ctx=ctx,
+            week_info=week_info,
         )
 
     @task()
@@ -324,4 +325,4 @@ with DAG(
     result = reconcile_and_write(week_info, week_table)
     categorized = categorize_and_write(week_info, week_table)
     rows >> week_table >> result >> categorized
-    result >> notify_recon()
+    result >> notify_recon(week_info)

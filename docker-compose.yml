@@ -27,8 +27,6 @@ services:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
-      AIRFLOW__SMTP__SMTP_SSL: "False"
 
     volumes:
       - ./dags:/opt/airflow/dags
@@ -50,8 +48,6 @@ services:
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
-      AIRFLOW__SMTP__SMTP_SSL: "False"
 
     volumes:
       - ./dags:/opt/airflow/dags
@@ -70,8 +66,6 @@ services:
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
-      AIRFLOW__SMTP__SMTP_SSL: "False"
 
     volumes:
       - ./dags:/opt/airflow/dags
@@ -89,8 +83,6 @@ services:
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      AIRFLOW__SMTP__SMTP_STARTTLS: "True"
-      AIRFLOW__SMTP__SMTP_SSL: "False"
       
     volumes:
       - ./dags:/opt/airflow/dags
