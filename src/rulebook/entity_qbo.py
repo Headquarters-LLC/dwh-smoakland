@@ -13,10 +13,47 @@ entity_qbo rulebook
 """
 
 RULEBOOK_NAME = "entity_qbo"
-RULEBOOK_VERSION = "2025.10.03"   # <-- bump when rules change
+RULEBOOK_VERSION = "2025.11.04"   # bump: allow cross-field bank_account/bank_cc_num combos
 UNKNOWN = "UNKNOWN"
 
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
+    # Aeropay + HAH 6852  => HAH 7 CA
+    (re.compile(
+        r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'
+        r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b.*\bAEROPAY\b)'
+    ), 'HAH 7 CA', 'aeropay-hah-6852'),
+
+    # Aeropay + TPH 5597  => SoCal
+    (re.compile(
+        r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b'
+        r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b.*\bAEROPAY\b)'
+    ), 'SoCal', 'aeropay-tph-5597'),
+
+    # Aeropay + DMD 2035  => SWD
+    (re.compile(
+        r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b'
+        r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b.*\bAEROPAY\b)'
+    ), 'SWD', 'aeropay-dmd-2035'),
+
+    # Scoped rules for bank_account and bank_cc_num
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+8267\b'),  'TPH',  'scoped-cc-8267'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b'),  'SSC',  'scoped-cc-9551'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+71000\b'), 'SSC',  'scoped-cc-71000'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+7639\b'),  'TPH',  'scoped-cc-7639'),
+
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b'), 'SOCAL', 'scoped-dama-5597'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+7403\b'), 'NY',    'scoped-dama-7403'),
+
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+3439\b'),  'TPH',  'scoped-ewb-3439'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+3447\b'),  'SSC',  'scoped-ewb-3447'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSSC\s+8452\b'),  'SSC',  'scoped-ewb-8452'),
+
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'),   'HAH',  'scoped-kp-6852'),
+
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b'), 'SWD',  'scoped-nbcu-2035'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+2211\b'), 'SSC',  'scoped-nbcu-2211'),
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSWD\s+SWD\b'),  'SWD',  'scoped-nbcu-swd'),
+
     (re.compile(r'(?i)\b(?:NBCU\ 2035|CC\ 8202|GB\ 0073|DAMA\ 2370|CASHLESS\ ATM|PLIVO|INTELLIWORX\ PH|EWB\ 3447|ARCO|ODOO\ B2B|EMPYREAL\ ENTERPRISES|DAMA\ FINANCIAL\ 2370|CC\ 71000|WEINSTEIN\ LOCAL|HONEY\ BUCKET|ECHTRAI\ LLC|SUBLIME\ MACHINING\ INC|HUMANA|PS\ ADMINISTRATORS|ATLAS)\b'), 'DMD'),
     (re.compile(r'(?i)(?<![A-Z0-9])(?:KP\ 6852|OSS|DNS|KEYPOINT\ CREDIT\ UNION|SACRAMENTO\ RENT|WORLDWIDE\ ATM|SWITCH\ COMMERCE|XEVEN\ SOLUTIONS|SQUARE\ INC|OU\ SAEFONG|NEW\ VENTURE\ ESCROW|FRANCHISE\ TAX|E\.T\.I\.\ FINANCIAL)(?![A-Z0-9])'), 'HAH'),
     (re.compile(r'(?i)\b(?:DAMA\ 5597)\b'), 'SOCAL'),
@@ -28,7 +65,7 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
 
 
 _SOURCE_COLS: List[str] = [
-    "bank_cc_num", "payee_vendor",
+    "bank_account", "bank_cc_num", "payee_vendor",
 ]
 
 # ---------------------------------------------------------------------------
@@ -46,8 +83,20 @@ def _concat_row(row: Dict) -> str:
         v = row.get(c, "")
         if v is None:
             v = ""
-        parts.append(str(v))
-    return _normalize_text(" | ".join([p for p in parts if p]))
+        v = str(v)
+        if v.strip():
+            parts.append(f"{c.upper()}: {v}")
+
+    bank_account = str(row.get("bank_account", "") or "").strip()
+    bank_cc = str(row.get("bank_cc_num", "") or "").strip()
+    if bank_account and bank_cc:
+        # Duplicate both labels with the combined token so existing scoped regexes
+        # that expect "DMD 2035" style strings continue to match even if the
+        # values arrive split across columns.
+        parts.append(f"BANK_ACCOUNT: {bank_account} {bank_cc}")
+        parts.append(f"BANK_CC_NUM: {bank_account} {bank_cc}")
+
+    return _normalize_text(" | ".join(parts))
 
 def _rule_tag(i: int, custom: str | None) -> str:
     """
