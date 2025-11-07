@@ -13,29 +13,67 @@ entity_qbo rulebook
 """
 
 RULEBOOK_NAME = "entity_qbo"
-RULEBOOK_VERSION = "2025.11.04"   # bump: allow cross-field bank_account/bank_cc_num combos
+RULEBOOK_VERSION = "2025.11.07"   # bump: allow cross-field bank_account/bank_cc_num combos and add scoped rules
 UNKNOWN = "UNKNOWN"
 
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
-    # Aeropay + HAH 6852  => HAH 7 CA
+    # --- AEROPAY + bank_account / bank_cc_num (highest priority) ---
+    # Aeropay + HAH 6852 → HAH 7 CA
     (re.compile(
         r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'
         r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b.*\bAEROPAY\b)'
     ), 'HAH 7 CA', 'aeropay-hah-6852'),
 
-    # Aeropay + TPH 5597  => SoCal
+    # Aeropay + TPH 5597 → SoCal
     (re.compile(
         r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b'
         r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b.*\bAEROPAY\b)'
     ), 'SoCal', 'aeropay-tph-5597'),
 
-    # Aeropay + DMD 2035  => SWD
+    # Aeropay + DMD 2035 → SWD
     (re.compile(
         r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b'
         r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b.*\bAEROPAY\b)'
     ), 'SWD', 'aeropay-dmd-2035'),
 
-    # Scoped rules for bank_account and bank_cc_num
+    # --- SUB 9551 scoped overrides (based on dashboard_1, cf_account, or payee_vendor) ---
+    # 0) Vendor = City of Sacramento → HAH
+    (re.compile(
+        r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\bCITY\s+OF\s+SACRAMENTO\b'
+        r'|\bPAYEE_VENDOR:[^|]*\bCITY\s+OF\s+SACRAMENTO\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
+    ), 'HAH', 'sub-9551-city-of-sacramento'),
+
+    # 1) dashboard_1 = New York → NY
+    (re.compile(
+        r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bDASHBOARD_1:[^|]*\bNEW\s+YORK\b'
+        r'|\bDASHBOARD_1:[^|]*\bNEW\s+YORK\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
+    ), 'NY', 'sub-9551-dashboard-ny'),
+
+    # 2) cf_account = 6. Marketing → TPH
+    (re.compile(
+        r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bCF_ACCOUNT:[^|]*\b6\.\s*MARKETING\b'
+        r'|\bCF_ACCOUNT:[^|]*\b6\.\s*MARKETING\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
+    ), 'TPH', 'sub-9551-cf-marketing'),
+
+    # 3) cf_account = 6. Legal Fees → TPH
+    (re.compile(
+        r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bCF_ACCOUNT:[^|]*\b6\.\s*LEGAL\s+FEES\b'
+        r'|\bCF_ACCOUNT:[^|]*\b6\.\s*LEGAL\s+FEES\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
+    ), 'TPH', 'sub-9551-cf-legal-fees'),
+
+    # 4) payee_vendor contains ATT or FRONTIER COMM CORP WEB → TPH
+    (re.compile(
+        r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\b(?:ATT|FRONTIER\s+COMM\s+CORP\s+WEB)\b'
+        r'|\bPAYEE_VENDOR:[^|]*\b(?:ATT|FRONTIER\s+COMM\s+CORP\s+WEB)\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
+    ), 'TPH', 'sub-9551-vendor-att-frontier'),
+
+    # 5) payee_vendor contains DOORDASH → TPH
+    (re.compile(
+        r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\bDOORDASH\b'
+        r'|\bPAYEE_VENDOR:[^|]*\bDOORDASH\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
+    ), 'TPH', 'sub-9551-vendor-doordash'),
+
+    # --- Standard scoped bank_account / bank_cc_num rules ---
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+8267\b'),  'TPH',  'scoped-cc-8267'),
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b'),  'SSC',  'scoped-cc-9551'),
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+71000\b'), 'SSC',  'scoped-cc-71000'),
@@ -48,12 +86,14 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+3447\b'),  'SSC',  'scoped-ewb-3447'),
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSSC\s+8452\b'),  'SSC',  'scoped-ewb-8452'),
 
-    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'),   'HAH',  'scoped-kp-6852'),
+    # Fallback for HAH 6852 (without Aeropay) → HAH
+    (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'), 'HAH 7 CA', 'scoped-kp-6852'),
 
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b'), 'SWD',  'scoped-nbcu-2035'),
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+2211\b'), 'SSC',  'scoped-nbcu-2211'),
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSWD\s+SWD\b'),  'SWD',  'scoped-nbcu-swd'),
 
+    # --- Legacy unscoped patterns (backward compatibility) ---
     (re.compile(r'(?i)\b(?:NBCU\ 2035|CC\ 8202|GB\ 0073|DAMA\ 2370|CASHLESS\ ATM|PLIVO|INTELLIWORX\ PH|EWB\ 3447|ARCO|ODOO\ B2B|EMPYREAL\ ENTERPRISES|DAMA\ FINANCIAL\ 2370|CC\ 71000|WEINSTEIN\ LOCAL|HONEY\ BUCKET|ECHTRAI\ LLC|SUBLIME\ MACHINING\ INC|HUMANA|PS\ ADMINISTRATORS|ATLAS)\b'), 'DMD'),
     (re.compile(r'(?i)(?<![A-Z0-9])(?:KP\ 6852|OSS|DNS|KEYPOINT\ CREDIT\ UNION|SACRAMENTO\ RENT|WORLDWIDE\ ATM|SWITCH\ COMMERCE|XEVEN\ SOLUTIONS|SQUARE\ INC|OU\ SAEFONG|NEW\ VENTURE\ ESCROW|FRANCHISE\ TAX|E\.T\.I\.\ FINANCIAL)(?![A-Z0-9])'), 'HAH'),
     (re.compile(r'(?i)\b(?:DAMA\ 5597)\b'), 'SOCAL'),
@@ -65,7 +105,7 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
 
 
 _SOURCE_COLS: List[str] = [
-    "bank_account", "bank_cc_num", "payee_vendor",
+    "bank_account", "bank_cc_num", "payee_vendor", "cf_account", "dashboard_1",
 ]
 
 # ---------------------------------------------------------------------------
