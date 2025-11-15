@@ -25,6 +25,11 @@ from src.notify.recon import notify_recon_failure
 from transforms.resolve_categorization import categorize_week
 
 
+def _is_truthy(val: str | None) -> bool:
+    if val is None:
+        return False
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
 
 DEFAULT_ARGS = {"owner": "smoakland", "retries": 0}
 
@@ -138,6 +143,11 @@ with DAG(
         ctx = get_current_context()
         df["ingest_batch_id"] = ctx["run_id"]
         df["ingest_ts"] = pd.Timestamp(ctx["ts"])
+        if "extended_description" in df.columns:
+            # Keep presentation-friendly blanks rather than NaN/None
+            df["extended_description"] = df["extended_description"].fillna("")
+        else:
+            df["extended_description"] = ""
 
         # Filter to the week (in case of dirty data)
         mask = (pd.to_datetime(df["date"], errors="coerce") >= week_start) & \
@@ -198,6 +208,12 @@ with DAG(
         wh = DuckDBWarehouse(db_path=os.getenv("DUCKDB_PATH","/opt/airflow/logs/local.duckdb"))
         week_start = pd.to_datetime(week_info["week_start"]).date()
         week_end   = pd.to_datetime(week_info["week_end"]).date()
+        force_recon_fail = _is_truthy(
+            Variable.get(
+                "FORCE_RECON_FAIL",
+                default_var=os.getenv("AIRFLOW_VAR_FORCE_RECON_FAIL", "false"),
+            )
+        )
 
         gold_week = pd.read_parquet(week_parquet)
         df_prev_all = wh.fetch_core_before(week_start)
@@ -215,6 +231,17 @@ with DAG(
 
         # Fail-fast if there are mismatches
         bad = summary[summary["verdict"] == "MISMATCH"]
+        if force_recon_fail:
+            print("[reconcile] FORCE_RECON_FAIL enabled -> forcing mismatch path for notification test")
+            if summary.empty:
+                forced_row = {c: None for c in summary.columns}
+                forced_row.update({"verdict": "FORCED_FAIL"})
+                summary = pd.concat([summary, pd.DataFrame([forced_row])], ignore_index=True)
+            else:
+                summary = summary.copy()
+                summary["verdict"] = "FORCED_FAIL"
+            summary.to_csv(summary_path, index=False)
+            bad = summary
         if not bad.empty:
             fail_path = os.path.join(report_dir, f"recon_fail_{week_start}_{week_end}.csv")
             bad.to_csv(fail_path, index=False)

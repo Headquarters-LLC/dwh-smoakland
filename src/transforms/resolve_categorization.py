@@ -105,6 +105,11 @@ def categorize_week(gold_week: pd.DataFrame) -> pd.DataFrame:
 
     out = gold_week.copy()
 
+    if "extended_description" in out.columns:
+        out["extended_description"] = out["extended_description"].fillna("")
+    else:
+        out["extended_description"] = ""
+
     # Apply each rulebook in order
     for col, infer_fn in RESOLVERS:
         out = _apply_resolver(out, col, infer_fn)
