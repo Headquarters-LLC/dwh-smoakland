@@ -20,6 +20,19 @@ STANDARD_COLUMNS = [
     "balance",         # optional running balance (float) if available
 ]
 
+def _clean_text(value: Any, default: str = "") -> str:
+    """
+    Normalize optional text fields so downstream never sees literal 'nan' or NaN.
+    """
+    if value is None:
+        return default
+    if isinstance(value, float) and pd.isna(value):
+        return default
+    if pd.isna(value):  # catches pandas NA/Nullable types
+        return default
+    s = str(value)
+    return default if s.strip().lower() == "nan" else s
+
 @dataclass
 class StandardizedRecord:
     bank_source: str
@@ -42,9 +55,8 @@ class StandardizedRecord:
         if d.get("balance") is not None:
             d["balance"] = pd.to_numeric(d["balance"], errors="coerce")
         # Ensure all string-like optional fields are strings (or empty) for consistency
-        for k in ("bank_account", "subentity", "bank_cc_num", "description"):
-            v = d.get(k)
-            d[k] = "" if v is None else str(v)
+        for k in ("bank_account", "subentity", "bank_cc_num", "description", "extended_description"):
+            d[k] = _clean_text(d.get(k), default="")
         return d
 
 class Parser(ABC):

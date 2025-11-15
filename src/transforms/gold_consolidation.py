@@ -35,6 +35,10 @@ def consolidate_week(df_week_core: pd.DataFrame,
         ])
 
     wk = df_week_core.copy()
+    if "extended_description" in wk.columns:
+        wk["extended_description"] = wk["extended_description"].fillna("")
+    else:
+        wk["extended_description"] = ""
     wk["amount"] = pd.to_numeric(wk["amount"], errors="coerce").round(4)
     wk["date"]   = pd.to_datetime(wk["date"], errors="coerce").dt.date
 
