@@ -66,7 +66,7 @@ class DuckDBWarehouse(WarehouseBase):
 
         for c in text_cols:
             out[c] = out[c].astype("string")
-            # Optional: keep this if quieres NULL explícito en DuckDB.
+            # Optional: keep this if quieres NULL explicito en DuckDB.
             out[c] = out[c].where(~out[c].isna(), None)
         if "extended_description" in out.columns:
             # Force empty strings over NULL to avoid 'nan' in exports

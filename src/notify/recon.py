@@ -57,11 +57,11 @@ def notify_recon_failure(
             summary_csv = candidate
 
     # Email
-    subject = f"❌ Reconciliation failed: {week_start} → {week_end}"
+    subject = f"[FAIL] Reconciliation failed: {week_start} -> {week_end}"
     html_body = f"""
     <p>The weekly reconciliation did not balance.</p>
     <ul>
-      <li><b>Week:</b> {html.escape(str(week_start))} → {html.escape(str(week_end))}</li>
+      <li><b>Week:</b> {html.escape(str(week_start))} -> {html.escape(str(week_end))}</li>
       <li><b>Report:</b> {html.escape(str(fail_csv))}</li>
     </ul>
     <p>Check the attached CSV for combinations with differences greater than the tolerance.</p>
@@ -72,7 +72,7 @@ def notify_recon_failure(
     # Slack
     slack_msg = (
         f":x: *Reconciliation failed*\n"
-        f"Week: {week_start} → {week_end}\n"
+        f"Week: {week_start} -> {week_end}\n"
         f"Report: {fail_csv}"
         + (f"\nSummary: {summary_csv}" if summary_csv and summary_csv != "N/A" else "")
     )

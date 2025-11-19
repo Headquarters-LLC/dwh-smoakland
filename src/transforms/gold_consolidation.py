@@ -6,8 +6,8 @@ KEY = ["bank_account", "subentity", "bank_cc_num"]
 
 def compute_prev_balance(df_before: pd.DataFrame) -> pd.DataFrame:
     """
-    Input: core.transactions < week_start (puede venir vacío).
-    Output: dataframe con KEY + prev_balance (último balance no-nulo por llave).
+    Input: core.transactions < week_start (puede venir vacio).
+    Output: dataframe con KEY + prev_balance (ultimo balance no-nulo por llave).
     """
     if df_before.empty:
         return pd.DataFrame(columns=KEY + ["prev_balance"])
