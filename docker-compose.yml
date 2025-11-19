@@ -11,6 +11,7 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
+      - ./airflow_config/airflow_meta.sql:/docker-entrypoint-initdb.d/airflow_meta.sql:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 10s
@@ -36,6 +37,7 @@ services:
       - ./plugins:/opt/airflow/plugins
       - ./tests:/opt/airflow/tests
       - ./.env:/opt/airflow/.env:ro
+      - ./airflow_config:/opt/airflow/airflow_config:ro
     ports:
       - "8080:8080"
     command: webserver
@@ -56,6 +58,7 @@ services:
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
       - ./.env:/opt/airflow/.env:ro
+      - ./airflow_config:/opt/airflow/airflow_config:ro
     command: scheduler
 
   airflow-triggerer:
@@ -73,6 +76,7 @@ services:
       - ./data_samples:/opt/airflow/data_samples
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
+      - ./airflow_config:/opt/airflow/airflow_config:ro
     command: triggerer
 
   airflow-init:
@@ -89,9 +93,12 @@ services:
       - ./src:/opt/airflow/src
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
+      - ./airflow_config:/opt/airflow/airflow_config:ro
     entrypoint: /bin/bash
     command: >
       -c "airflow db migrate &&
+          airflow variables import /opt/airflow/airflow_config/airflow_vars.json &&
+          airflow connections import /opt/airflow/airflow_config/airflow_conns.json &&
           airflow users create --username airflow --password airflow --firstname admin --lastname user --role Admin --email admin@example.com &&
           echo 'Airflow init done.'"
 

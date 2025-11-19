@@ -59,6 +59,18 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
    - User: `airflow`  
    - Password: `airflow`
 
+### Restoring preconfigured Airflow data
+
+- All exported **Variables**, **Connections**, and a Postgres **metadata dump** live in `airflow_config/`.
+- `docker compose up airflow-init` now imports `airflow_config/airflow_vars.json` and `airflow_config/airflow_conns.json` automatically after migrations/user creation.
+- The Postgres container mounts `airflow_config/airflow_meta.sql` to `/docker-entrypoint-initdb.d`, so the dump seeds a fresh metadata DB the next time the volume is empty.  
+  - To force a restore, drop the existing volume and re-run init:
+    ```bash
+    docker compose down -v   # removes postgres-db-volume
+    docker compose up airflow-init
+    docker compose up -d
+    ```
+
 ---
 
 ## Repo Layout
@@ -121,6 +133,7 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
 
 - Copy `.env.example` → `.env` for **local-only settings**.  
   ⚠️ **Never commit secrets**.
+- The `.env` file provides notification-specific values (email list + Slack webhook) consumed by docker-compose overrides like `docker-compose.mailhog.yml`.
 
 - In production: configure **Airflow Connections & Variables** instead of using `.env`.
 
