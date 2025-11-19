@@ -1,4 +1,4 @@
-# Smoakland Airflow Starter
+# dwh-smoakland
 
 Local, Docker-Compose–based Airflow starter for the Smoakland automation project.
 This repo lets you develop and test Phase 1 ingestion and categorization end-to-end locally, with clean modular separation between:

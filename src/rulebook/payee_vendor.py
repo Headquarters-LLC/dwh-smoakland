@@ -296,7 +296,7 @@ def infer(row: dict) -> tuple[str, str]:
 
 def apply_rules(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Vectorized API — useful for QA and batch validation.
+    Vectorized API -- useful for QA and batch validation.
 
     Adds the following columns:
         - payee_vendor (str)

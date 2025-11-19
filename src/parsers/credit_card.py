@@ -78,7 +78,7 @@ class CreditCardParser(Parser):
             credit_s = utils.clean_amount_series(df[credit_c]) if credit_c else pd.Series([0]*n)
             amount_s = credit_s.abs().fillna(0) - debit_s.abs().fillna(0)
 
-        # Special: cards that come inverted (71000 per infer) → flip signs
+        # Special: cards that come inverted (71000 per infer) -> flip signs
         if invert_signs and amount_s is not None:
             amount_s = -amount_s
 

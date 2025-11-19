@@ -294,7 +294,7 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
     (re.compile(r'(?i)(?<![A-Z0-9])(?:PASS|E\-Z)(?![A-Z0-9])'), 'SMOAKLAND NEW YORK EXPENSE:VEHICLE EXPENSE'),
 ]
 
-# We concatenate the same canonical fields we’ve been using across rulebooks.
+# We concatenate the same canonical fields we've been using across rulebooks.
 _SOURCE_COLS: List[str] = [
     "bank_account", "bank_cc_num", "payee_vendor", "entity_qbo",
 ]

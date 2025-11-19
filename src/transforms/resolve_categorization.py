@@ -14,7 +14,7 @@ from rulebook.qbo_sub_account import infer as infer_qbo_sub_account
 
 # ---------------------------------------------------------------------------
 # Configuration: which columns we resolve and with which rulebook.
-# Order matters: they’re applied sequentially and can build on prior results.
+# Order matters: they're applied sequentially and can build on prior results.
 # Each infer_fn must return: (value: str, rule_tag: str)
 #   value    -> inferred value or "UNKNOWN"/"" depending on rulebook's contract
 #   rule_tag -> "rulebook@version#<rule_id>" or "" if unknown

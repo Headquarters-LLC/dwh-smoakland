@@ -46,7 +46,7 @@ with DAG(
     def list_csvs() -> list[str]:
         """
         List CSVs from the configured input folder (local dev).
-        This remains decoupled: for GDrive you’ll swap the adapter.
+        This remains decoupled: for GDrive you'll swap the adapter.
         """
         input_folder = Variable.get(
             "INPUT_FOLDER",
@@ -64,7 +64,7 @@ with DAG(
         Priority:
           1) Airflow Variables: WEEK_YEAR + WEEK_NUM
           2) Folder name: .../week_37, .../week37-2025
-          3) Fallback: prior week from (logical_date - 7d)  ← semana vencida
+          3) Fallback: prior week from (logical_date - 7d)  <- semana vencida
         Returns ISO strings and a 'source' hint.
         """
         # 1) Variables
@@ -90,7 +90,7 @@ with DAG(
     @task()
     def parse_one(file_path: str) -> str:
         """
-        Detect source → parse → standardize to core schema.
+        Detect source -> parse -> standardize to core schema.
         Writes a parquet in logs/staging and returns its path.
         """
         df_raw = pd.read_csv(file_path)
@@ -328,7 +328,7 @@ with DAG(
                 continue
 
             # Group by description fields to identify new rule candidates
-            # Include payee_vendor when available — it often improves rule context
+            # Include payee_vendor when available -- it often improves rule context
             group_cols = [c for c in ["payee_vendor", "description", "extended_description"] if c in unk.columns]
 
             out_df = (

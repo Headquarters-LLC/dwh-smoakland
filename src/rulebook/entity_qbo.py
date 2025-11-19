@@ -18,56 +18,56 @@ UNKNOWN = "UNKNOWN"
 
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
     # --- AEROPAY + bank_account / bank_cc_num (highest priority) ---
-    # Aeropay + HAH 6852 → HAH 7 CA
+    # Aeropay + HAH 6852 -> HAH 7 CA
     (re.compile(
         r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'
         r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b.*\bAEROPAY\b)'
     ), 'HAH 7 CA', 'aeropay-hah-6852'),
 
-    # Aeropay + TPH 5597 → SoCal
+    # Aeropay + TPH 5597 -> SoCal
     (re.compile(
         r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b'
         r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bTPH\s+5597\b.*\bAEROPAY\b)'
     ), 'SoCal', 'aeropay-tph-5597'),
 
-    # Aeropay + DMD 2035 → SWD
+    # Aeropay + DMD 2035 -> SWD
     (re.compile(
         r'(?i)(?:\bAEROPAY\b.*\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b'
         r'|\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b.*\bAEROPAY\b)'
     ), 'SWD', 'aeropay-dmd-2035'),
 
     # --- SUB 9551 scoped overrides (based on dashboard_1, cf_account, or payee_vendor) ---
-    # 0) Vendor = City of Sacramento → HAH
+    # 0) Vendor = City of Sacramento -> HAH
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\bCITY\s+OF\s+SACRAMENTO\b'
         r'|\bPAYEE_VENDOR:[^|]*\bCITY\s+OF\s+SACRAMENTO\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
     ), 'HAH', 'sub-9551-city-of-sacramento'),
 
-    # 1) dashboard_1 = New York → NY
+    # 1) dashboard_1 = New York -> NY
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bDASHBOARD_1:[^|]*\bNEW\s+YORK\b'
         r'|\bDASHBOARD_1:[^|]*\bNEW\s+YORK\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
     ), 'NY', 'sub-9551-dashboard-ny'),
 
-    # 2) cf_account = 6. Marketing → TPH
+    # 2) cf_account = 6. Marketing -> TPH
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bCF_ACCOUNT:[^|]*\b6\.\s*MARKETING\b'
         r'|\bCF_ACCOUNT:[^|]*\b6\.\s*MARKETING\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
     ), 'TPH', 'sub-9551-cf-marketing'),
 
-    # 3) cf_account = 6. Legal Fees → TPH
+    # 3) cf_account = 6. Legal Fees -> TPH
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bCF_ACCOUNT:[^|]*\b6\.\s*LEGAL\s+FEES\b'
         r'|\bCF_ACCOUNT:[^|]*\b6\.\s*LEGAL\s+FEES\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
     ), 'TPH', 'sub-9551-cf-legal-fees'),
 
-    # 4) payee_vendor contains ATT or FRONTIER COMM CORP WEB → TPH
+    # 4) payee_vendor contains ATT or FRONTIER COMM CORP WEB -> TPH
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\b(?:ATT|FRONTIER\s+COMM\s+CORP\s+WEB)\b'
         r'|\bPAYEE_VENDOR:[^|]*\b(?:ATT|FRONTIER\s+COMM\s+CORP\s+WEB)\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
     ), 'TPH', 'sub-9551-vendor-att-frontier'),
 
-    # 5) payee_vendor contains DOORDASH → TPH
+    # 5) payee_vendor contains DOORDASH -> TPH
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\bDOORDASH\b'
         r'|\bPAYEE_VENDOR:[^|]*\bDOORDASH\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
@@ -86,7 +86,7 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+3447\b'),  'SSC',  'scoped-ewb-3447'),
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSSC\s+8452\b'),  'SSC',  'scoped-ewb-8452'),
 
-    # Fallback for HAH 6852 (without Aeropay) → HAH
+    # Fallback for HAH 6852 (without Aeropay) -> HAH
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bHAH\s+6852\b'), 'HAH 7 CA', 'scoped-kp-6852'),
 
     (re.compile(r'(?i)\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bDMD\s+2035\b'), 'SWD',  'scoped-nbcu-2035'),

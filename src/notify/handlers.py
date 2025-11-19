@@ -151,8 +151,8 @@ def _try_slack_via_conn(message: str, conn_id: str) -> bool:
 def send_slack(message: str) -> None:
     """
     Resolution order:
-      1) Variable NOTIFY_SLACK_CONN_ID (default 'slack_default') → Connection.
-      2) Variable SLACK_WEBHOOK → Direct webhook (token or full URL).
+      1) Variable NOTIFY_SLACK_CONN_ID (default 'slack_default') -> Connection.
+      2) Variable SLACK_WEBHOOK -> Direct webhook (token or full URL).
       3) If none, skip.
     """
     if not _HAS_SLACK:
