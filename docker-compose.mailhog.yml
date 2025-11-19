@@ -12,12 +12,12 @@ services:
   airflow-webserver:
     environment:
       # --- Airflow Variables (read by your handlers.py via Variable.get) ---
-      - AIRFLOW_VAR_NOTIFY_EMAIL_TO=ops@example.com, finanzas@example.com
-      - AIRFLOW_VAR_SMTP_CONN_ID=smtp_default
+      - AIRFLOW_VAR_NOTIFY_EMAIL_TO=${AIRFLOW_VAR_NOTIFY_EMAIL_TO:-ops@example.com,finanzas@example.com}
+      - AIRFLOW_VAR_SMTP_CONN_ID=${AIRFLOW_VAR_SMTP_CONN_ID:-smtp_default}
       
       # Slack
-      - AIRFLOW_VAR_NOTIFY_SLACK_CONN_ID=slack_default
-      - AIRFLOW_VAR_SLACK_WEBHOOK=https://hooks.slack.com/triggers/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
+      - AIRFLOW_VAR_NOTIFY_SLACK_CONN_ID=${AIRFLOW_VAR_NOTIFY_SLACK_CONN_ID:-slack_default}
+      - AIRFLOW_VAR_SLACK_WEBHOOK=${AIRFLOW_VAR_SLACK_WEBHOOK:-}
 
       # --- SMTP Connection via URI (auto-creates smtp_default) ---
       - AIRFLOW_CONN_SMTP_DEFAULT=smtp://mailhog:1025
@@ -33,8 +33,10 @@ services:
 
   airflow-scheduler:
     environment:
-      - AIRFLOW_VAR_NOTIFY_EMAIL_TO=jorgeaveraf@gmail.com, jorge.vera@headquarters.co
-      - AIRFLOW_VAR_SMTP_CONN_ID=smtp_default
+      - AIRFLOW_VAR_NOTIFY_EMAIL_TO=${AIRFLOW_VAR_NOTIFY_EMAIL_TO:-ops@example.com,finanzas@example.com}
+      - AIRFLOW_VAR_SMTP_CONN_ID=${AIRFLOW_VAR_SMTP_CONN_ID:-smtp_default}
+      - AIRFLOW_VAR_NOTIFY_SLACK_CONN_ID=${AIRFLOW_VAR_NOTIFY_SLACK_CONN_ID:-slack_default}
+      - AIRFLOW_VAR_SLACK_WEBHOOK=${AIRFLOW_VAR_SLACK_WEBHOOK:-}
       - AIRFLOW_CONN_SMTP_DEFAULT=smtp://mailhog:1025
       - AIRFLOW__SMTP__SMTP_HOST=mailhog
       - AIRFLOW__SMTP__SMTP_PORT=1025

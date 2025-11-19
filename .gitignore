@@ -47,6 +47,7 @@ unittests.log
 /tmp/dags
 /tmp/logs
 /tmp/plugins
+airflow_config/
 
 # -----------------------------
 # 🧱 DuckDB / Local data

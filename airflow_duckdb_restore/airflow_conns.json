@@ -1,0 +1,32 @@
+{
+  "slack_default": {
+    "conn_type": "http",
+    "description": "",
+    "login": "",
+    "password": null,
+    "host": "hooks.slack.com",
+    "port": null,
+    "schema": "https",
+    "extra": "{\"endpoint\": \"triggers/T0112BF6J00/9594930161829/432f0e62986678d86f58a4c45f5911af\"}"
+  },
+  "smtp_default": {
+    "conn_type": "smtp",
+    "description": null,
+    "login": "jorge.vera@headquarters.co",
+    "password": "ecpdodckvqsorqqi",
+    "host": "smtp.gmail.com",
+    "port": 587,
+    "schema": "",
+    "extra": "{\"smtp_starttls\": \"True\", \"smtp_ssl\": \"False\", \"from_email\": \"jorge.vera@headquarters.co\", \"timeout\": \"30\"}"
+  },
+  "smtp_gmail_465": {
+    "conn_type": "smtps",
+    "description": null,
+    "login": "jorge.vera@headquarters.co",
+    "password": "ecpdodckvqsorqqi",
+    "host": "smtp.gmail.com",
+    "port": 465,
+    "schema": "",
+    "extra": "{\"from_email\": \"jorge.vera@headquarters.co\", \"timeout\": \"30\", \"smtp_ssl\": \"true\"}"
+  }
+}
