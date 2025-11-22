@@ -7,8 +7,30 @@ import re
 import pandas as pd
 from typing import List, Tuple
 
+_SOURCE_COLS = [
+    "bank_cc_num", "description", "extended_description",
+]
+
+_RULEBOOK_NAME = "payee_vendor"
+_RULEBOOK_VERSION = "2025.11.21"
+_POSTPROCESS_TAG = f"{_RULEBOOK_NAME}@{_RULEBOOK_VERSION}#post-check-amount"
+_POSTPROCESS_SOURCE = "postprocess"
+_CHECK_PATTERN = re.compile(r"(?i)\bCHECK\b")
+
+
 # --- Rules (pattern, payee, rule_id optional) --------------------------------
 _RULES: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bBLAZE\b'), 'BLAZE'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*CURRENCY\s+AND\s+COIN\s+DEPOSITED'), 'CURRENCY AND COIN DEPOSITED'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bDOORDASH\b'), 'DOORDASH'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bOSS\b'), 'OSS'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bDISPOJOY\b'), 'DISPOJOY'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bCHASE\b'), 'CC'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bERACTOLL\b'), 'ERACTOLL'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bAPSMOAKLAND\b'), 'APSMOAKLAND'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*MATRIX\s+TRUST'), 'MATRIX TRUST'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*QUIK\s+STOP'), 'QUIK STOP'),
+#---TextFSM rules below---------------------------------
     (re.compile(r'(?i)\b(?:ACCELA\ WEB)\b'), 'ACCELA WEB'),
     (re.compile(r'(?i)\b(?:ACME\ FIRE\ EXTINGUISHER\ CO)\b'), 'ACME FIRE EXTINGUISHER CO'),
     (re.compile(r'(?i)\b(?:ADCHEM\ LLC)\b'), 'ADCHEM LLC'),
@@ -242,13 +264,6 @@ _RULES: List[Tuple[re.Pattern, str]] = [
 
 # --- Helpers -----------------------------------------------------------------
 
-_SOURCE_COLS = [
-    "bank_cc_num", "description", "extended_description",
-]
-
-_RULEBOOK_NAME = "payee_vendor"
-_RULEBOOK_VERSION = "2025.10.03"
-
 def _normalize_text(s: str) -> str:
     """Normalize string casing and spacing for consistent regex matching."""
     if not isinstance(s, str):
@@ -257,55 +272,87 @@ def _normalize_text(s: str) -> str:
     return " ".join(s.split())
 
 def _concat_row(row: dict) -> str:
-    """Concatenate the key source columns into one normalized text string."""
-    parts = [str(row.get(c, "") or "") for c in _SOURCE_COLS]
-    return _normalize_text(" | ".join([p for p in parts if p]))
-
-def build_search_text(df: pd.DataFrame) -> pd.Series:
     """
-    Build a full-text search string per row by concatenating key columns.
-    Used in vectorized rule application.
+    Concatenate the key source columns into one normalized text string,
+    tagging each segment with the column name — same pattern as entity_qbo.
     """
     parts = []
     for c in _SOURCE_COLS:
-        if c in df.columns:
-            parts.append(df[c].fillna("").astype(str))
-        else:
-            parts.append(pd.Series([""] * len(df)))
-    text = pd.Series([""] * len(df))
-    for p in parts:
-        text = text.str.cat(p, sep=" | ")
-    return text.map(_normalize_text)
+        v = row.get(c, "") or ""
+        v = str(v)
+        if v.strip():
+            parts.append(f"{c.upper()}: {v}")
+
+    return _normalize_text(" | ".join(parts))
+
+def build_search_text(df: pd.DataFrame) -> pd.Series:
+    """
+    Vectorized: produce same text as _concat_row() for each row.
+    Ensures rule matching is consistent between infer() and apply_rules().
+    """
+    return df.apply(lambda r: _concat_row(r.to_dict()), axis=1)
+
+def postprocess(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply non-text overrides after regex rules.
+    Rule: if description contains CHECK (case-insensitive, word boundary) and amount < 0,
+    force payee_vendor to PAYNW and mark lineage as postprocess.
+    """
+    if df is None or df.empty:
+        return df
+    if not {"description", "amount", "payee_vendor"}.issubset(df.columns):
+        return df
+
+    out = df.copy()
+    desc = out["description"].fillna("").astype(str)
+    amounts = pd.to_numeric(out["amount"], errors="coerce")
+    mask = desc.str.contains(_CHECK_PATTERN) & (amounts < 0)
+    if not mask.any():
+        return out
+
+    out.loc[mask, "payee_vendor"] = "PAYNW"
+
+    for tag_col in ("payee_vendor_rule_tag", "payee_rule_tag"):
+        if tag_col in out.columns:
+            out.loc[mask, tag_col] = _POSTPROCESS_TAG
+
+    for src_col in ("payee_vendor_source", "payee_source"):
+        if src_col in out.columns:
+            out.loc[mask, src_col] = _POSTPROCESS_SOURCE
+
+    for conf_col in ("payee_vendor_confidence", "payee_confidence"):
+        if conf_col in out.columns:
+            out.loc[mask, conf_col] = 1.0
+
+    if "payee_rule_id" in out.columns:
+        out.loc[mask, "payee_rule_id"] = pd.NA
+
+    return out
 
 def infer(row: dict) -> tuple[str, str]:
     """
-    Row-level API for the categorization pipeline.
-
+    Row-level API.
     Returns:
-        tuple:
-            - inferred_value (str): Payee/Vendor value or 'UNKNOWN'
-            - rule_tag (str): Identifier of the matching rule in format
-              '<rulebook>@<version>#<rule_id>'
+        (payee_vendor_value, rule_tag)
     """
     text = _concat_row(row)
+
     for idx, (pat, payee) in enumerate(_RULES, start=1):
-        # Supports both compiled regex and plain string patterns
-        if pat.search(text) if hasattr(pat, "search") else re.search(pat, text):
+        matched = pat.search(text) if hasattr(pat, "search") else re.search(pat, text)
+        if matched:
             return payee, f"{_RULEBOOK_NAME}@{_RULEBOOK_VERSION}#{idx}"
+
     return "UNKNOWN", ""
 
 def apply_rules(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Vectorized API -- useful for QA and batch validation.
-
-    Adds the following columns:
-        - payee_vendor (str)
-        - payee_rule_id (Int64)
-        - payee_rule_tag (str)
-        - payee_confidence (float) = 1.0 if matched, 0.0 otherwise
-        - payee_source (str) = 'rule' if matched, 'unknown' otherwise
-
-    Rows with no match are explicitly labeled as 'UNKNOWN'.
+    Vectorized rule application.
+    Adds:
+        - payee_vendor
+        - payee_rule_id
+        - payee_rule_tag
+        - payee_confidence
+        - payee_source
     """
     out = df.copy()
     search = build_search_text(out)
@@ -317,18 +364,19 @@ def apply_rules(df: pd.DataFrame) -> pd.DataFrame:
     out["payee_source"] = "unknown"
 
     unmatched = out["payee_vendor"] == ""
+
     for i, (pat, payee) in enumerate(_RULES, start=1):
-        # .str.contains() accepts both string and compiled regex
-        mask = unmatched & search.str.contains(pat)
+        mask = unmatched & search.str.contains(pat, regex=True)
         if not mask.any():
             continue
+
         out.loc[mask, "payee_vendor"] = payee
         out.loc[mask, "payee_rule_id"] = i
         out.loc[mask, "payee_rule_tag"] = f"{_RULEBOOK_NAME}@{_RULEBOOK_VERSION}#{i}"
         out.loc[mask, "payee_confidence"] = 1.0
         out.loc[mask, "payee_source"] = "rule"
+
         unmatched = out["payee_vendor"] == ""
 
-    # Fallback for unmatched rows
     out.loc[out["payee_vendor"] == "", "payee_vendor"] = "UNKNOWN"
-    return out
+    return postprocess(out)

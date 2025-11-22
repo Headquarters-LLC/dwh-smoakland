@@ -218,6 +218,11 @@ class DuckDBWarehouse(WarehouseBase):
             to_drop = [c for c in info_df["name"].tolist() if c.endswith("_source") or c.endswith("_confidence")]
             for col in to_drop:
                 self.con.execute(f'ALTER TABLE gold.categorized_bank_cc DROP COLUMN "{col}"')
+            existing = set(info_df["name"].tolist()) - set(to_drop)
+            for col in base_cols:
+                if col not in existing:
+                    # New columns default to TEXT; adequate for labels/IDs
+                    self.con.execute(f'ALTER TABLE gold.categorized_bank_cc ADD COLUMN "{col}" TEXT')
         except Exception:
             pass
 
