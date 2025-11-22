@@ -103,7 +103,10 @@ def reconcile_summary(df_week_gold: pd.DataFrame,
         .reindex(keys_in_week, fill_value=0.0)
     )
 
-    s = pd.concat([end_prev, last_bal, sum_amt], axis=1).reset_index()
+    def _num(series: pd.Series) -> pd.Series:
+        return pd.to_numeric(series, errors="coerce").fillna(0.0).astype(float)
+
+    s = pd.concat([_num(end_prev), _num(last_bal), _num(sum_amt)], axis=1).reset_index()
     s["delta_bal"] = (s["end_curr"] - s["end_prev"]).round(4)
     s["sum_amt"]   = s["sum_amt"].round(4)
     s["diff"]      = (s["delta_bal"] - s["sum_amt"]).abs().round(4)

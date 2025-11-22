@@ -4,7 +4,7 @@ from typing import Callable, Dict, List, Tuple
 import pandas as pd
 
 # Import each rulebook's row-level API (infer)
-from rulebook.payee_vendor import infer as infer_payee_vendor
+from rulebook.payee_vendor import infer as infer_payee_vendor, postprocess as postprocess_payee_vendor
 from rulebook.cf_account import infer as infer_cf_account
 from rulebook.dashboard_1 import infer as infer_dashboard_1
 from rulebook.budget_owner import infer as infer_budget_owner
@@ -31,8 +31,8 @@ RESOLVERS: List[Tuple[str, Callable[[dict], Tuple[str, str]]]] = [
 
 # Final schema for gold.categorized_bank_cc
 CATEG_COLS: List[str] = [
-    "bank_account", "subentity", "bank_cc_num",
-    "date", "txn_id", "week_num",
+    "bank_account", "subentity", "bank_cc_num", "bank_account_cc",
+    "date", "txn_id", "week_num", "week_label",
     "description", "extended_description",
     "amount", "balance",
     "year",
@@ -110,9 +110,19 @@ def categorize_week(gold_week: pd.DataFrame) -> pd.DataFrame:
     else:
         out["extended_description"] = ""
 
+    # Derived presentation helpers
+    ba = out["bank_account"] if "bank_account" in out.columns else pd.Series([""] * len(out))
+    cc = out["bank_cc_num"] if "bank_cc_num" in out.columns else pd.Series([""] * len(out))
+    out["bank_account_cc"] = ba.fillna("").astype(str).str.cat(cc.fillna("").astype(str), sep=" ").str.strip()
+
+    wk_num = out["week_num"] if "week_num" in out.columns else pd.Series([pd.NA] * len(out), dtype="Int64")
+    out["week_label"] = "Week " + wk_num.astype("Int64").astype(str)
+
     # Apply each rulebook in order
     for col, infer_fn in RESOLVERS:
         out = _apply_resolver(out, col, infer_fn)
+        if col == "payee_vendor":
+            out = postprocess_payee_vendor(out)
 
     # Ensure final schema (adds NA for any missing columns)
     out = _ensure_columns(out, CATEG_COLS)

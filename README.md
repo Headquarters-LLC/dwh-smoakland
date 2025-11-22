@@ -129,6 +129,16 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
 
 ---
 
+## Categorization Rulebooks & Overrides
+
+- Payee/vendor resolution is driven by the regex rulebook at `src/rulebook/payee_vendor.py`; rule tags follow `<rulebook>@<version>#<rule_id>`.
+- Non-text logic is handled after regex: `categorize_week` calls `postprocess` from `src/rulebook/payee_vendor.py` (wired in `src/transforms/resolve_categorization.py`).
+- Current override: if `description` contains the word `CHECK` (case-insensitive, word boundary) and `amount` < 0, then `payee_vendor` is set to `PAYNW` with rule tag `payee_vendor@2025.11.21#post-check-amount` and source `postprocess`.
+- Future numeric/cross-field tweaks should follow the same pattern: keep regex-only rules in `_RULES`, and place numeric or multi-field conditions in the rulebook’s `postprocess`.
+- Gold output (`gold.categorized_bank_cc`) now derives `week_label` (`Week {week_num}`) and `bank_account_cc` (`{bank_account} {bank_cc_num}`) immediately after `week_num`, preserving schema order for downstream parquet/reporting.
+
+---
+
 ## Environment & Config
 
 - Copy `.env.example` → `.env` for **local-only settings**.  
