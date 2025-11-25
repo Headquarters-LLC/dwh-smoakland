@@ -11,6 +11,13 @@ This repo lets you develop and test Phase 1 ingestion and categorization end-to-
 
 Once credentials are available, you can swap local adapters (Drive/DuckDB) for real ones (Google Drive, BigQuery, QuickBooks).
 
+Phase 2 now adds a QuickBooks export path:
+- Orchestration → `dags/dag_part2_qbo_export.py` (TaskFlow)
+- Pipeline → `src/pipelines/qbo_export.py`
+- Domain layer → `src/accounting/` (models, ports, services)
+- Integration adapter → `src/integrations/qbo_gateway/` (config, mappers, HTTP client + exporter)
+- Exports are built from the categorized warehouse tables and sent to the QBO Gateway Service with idempotent POSTs.
+
 ---
 
 ## Stack
@@ -184,6 +191,37 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
 - This repo is ready to scale:  
   - swap Docker Compose → VPS or K8s  
   - or use managed Airflow (Cloud Composer, Astronomer).
+
+### Phase 2: QBO Export
+
+- DAG `part2_qbo_export` reads the already categorized warehouse data (`gold.categorized_bank_cc`) for the requested week and exports it to QuickBooks through the QBO Gateway Service.
+- Window resolution mirrors Phase 1 (Variables `WEEK_YEAR`/`WEEK_NUM`, folder hint, or `logical_date - 7d` fallback).
+- Annex A/B mappings are applied end-to-end (domain → payload), including expense class support and the current interim entity_type default for deposits.
+- Rows with “unknown” critical fields (vendor/account/bank, etc.) are skipped with a `[qbo-export]` warning to avoid sending bad payloads.
+- DAG parameters (Airflow Variables/env):
+  - `QBO_CLIENT_ID` (required): UUID/realm used in `/qbo/{client_id}/...`.
+  - `QBO_ENVIRONMENT` (`sandbox` or `production`, default `sandbox`).
+  - `QBO_AUTO_CREATE` (true/false): only used for sandbox; forced off for production.
+  - `QBO_GATEWAY_BASE_URL` (e.g., `http://localhost:8000` or `http://qbo-gateway-api:8000`).
+  - `QBO_GATEWAY_API_KEY` (X-API-Key header).
+  - Optional: `QBO_GATEWAY_TIMEOUT`, `QBO_GATEWAY_RETRY_ATTEMPTS`, `QBO_GATEWAY_RETRY_BACKOFF`.
+- Trigger from Airflow UI: enable `part2_qbo_export`, set the Variables above, and run. The DAG will:
+  1) Resolve the target week.
+  2) Fetch categorized rows from DuckDB/BigQuery.
+  3) Map them into accounting models (Deposits/Expenses) and build QBO payloads.
+  4) POST to `/qbo/{client_id}/deposits` and `/expenses` with `X-API-Key`, `Idempotency-Key`, and `environment/auto_create` query params.
+
+### Phase 2 Architecture Notes
+
+- `src/pipelines/qbo_export.py` orchestrates the export workflow and only depends on the warehouse adapter + accounting services.
+- `src/accounting/models.py` defines Pydantic domain models (`Deposit`, `Expense`, etc.) with built-in idempotency fingerprints; `services.py` handles batching and delegates to an exporter interface defined in `ports.py`.
+- `src/integrations/qbo_gateway/` provides the concrete exporter:
+  - `config.py` reads Airflow Variables/env for base URL, API key, environment, timeouts, retries.
+  - `mappers.py` converts domain models into QBO Gateway payloads (Annex A/B style: deposit_to_account/doc_number/lines/private_note and expense vendor/bank_account/lines).
+  - `client.py` wraps HTTP calls with headers + retries.
+  - `exporter.py` implements the `IAccountingExporter` interface and POSTs to the Gateway with per-entity `Idempotency-Key`.
+- Data dependencies: exports read from `gold.categorized_bank_cc`, reusing the categorization outputs produced by Phase 1.
+- Local Gateway: point `QBO_GATEWAY_BASE_URL` to your running QBO Gateway (e.g., docker-compose from its repo) and keep `QBO_ENVIRONMENT=sandbox` with `QBO_AUTO_CREATE=true` for smoke tests.
 
 ---
 

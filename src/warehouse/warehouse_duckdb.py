@@ -1,3 +1,4 @@
+from __future__ import annotations
 #warehouse_duckdb.py
 
 import duckdb
@@ -166,6 +167,16 @@ class DuckDBWarehouse(WarehouseBase):
             FROM core_transactions
             WHERE CAST(date AS DATE) < ?
         """, [start_date]).fetchdf()
+
+    def fetch_categorized_between(self, start_date, end_date) -> pd.DataFrame:
+        """
+        Fetch categorized transactions for a date window.
+        """
+        return self.con.execute("""
+            SELECT *
+            FROM gold.categorized_bank_cc
+            WHERE CAST(date AS DATE) BETWEEN ? AND ?
+        """, [start_date, end_date]).fetchdf()
 
     def upsert_gold_consolidation_week(self, df: pd.DataFrame, week_start, week_end) -> None:
         if df is None or df.empty:
