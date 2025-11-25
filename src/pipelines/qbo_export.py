@@ -4,6 +4,7 @@ from datetime import date
 from typing import List, Optional
 import logging
 import pandas as pd
+from pathlib import Path
 
 from src.accounting.models import (
     Deposit,
@@ -19,6 +20,7 @@ from src.warehouse.warehouse_duckdb import DuckDBWarehouse
 from src.warehouse.warehouse_base import WarehouseBase
 
 log = logging.getLogger(__name__)
+SAMPLES_PATH = Path(__file__).resolve().parents[2] / "data_samples" / "qbo"
 
 
 def _get_warehouse(db_path: Optional[str] = None) -> WarehouseBase:
@@ -33,6 +35,55 @@ def _clean_str(val) -> str:
         return ""
     text = str(val).strip()
     return "" if text.lower() == "nan" else text
+
+
+def _normalize_source(source: Optional[str]) -> str:
+    if isinstance(source, str) and source.lower() in {"warehouse", "samples"}:
+        return source.lower()
+    return "warehouse"
+
+
+def _load_samples_dataframe(base_path: Path | str | None = None) -> pd.DataFrame:
+    base = Path(base_path) if base_path else SAMPLES_PATH
+    if not base.exists():
+        return pd.DataFrame()
+    files = sorted(base.rglob("*.csv"))
+    if not files:
+        return pd.DataFrame()
+    frames = []
+    for fp in files:
+        frames.append(pd.read_csv(fp))
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if df.empty:
+        return df
+
+    if "bank_account_cc" not in df.columns:
+        ba = df.get("bank_account", pd.Series([""] * len(df)))
+        cc = df.get("bank_cc_num", pd.Series([""] * len(df)))
+        df["bank_account_cc"] = (ba.fillna("").astype(str) + " " + cc.fillna("").astype(str)).str.strip()
+
+    required_cols = [
+        "bank_account",
+        "bank_cc_num",
+        "bank_account_cc",
+        "payee_vendor",
+        "description",
+        "extended_description",
+        "drive_location",
+        "drive_folder",
+        "amount",
+        "date",
+        "txn_id",
+        "qbo_account",
+        "qbo_sub_account",
+        "entity_qbo",
+        "class",
+    ]
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = None
+
+    return df
 
 
 def _is_unknown(val) -> bool:
@@ -66,15 +117,19 @@ def _desc(row: dict) -> str:
 
 
 def _private_note(row: dict) -> str:
-    # Per Annex: only drive_location is used as memo; extended desc stays in line description.
     return _clean_str(row.get("drive_location") or row.get("drive_folder"))
 
 
 def load_categorized_transactions(
     start_date: date | str,
     end_date: date | str,
+    *,
     warehouse: Optional[WarehouseBase] = None,
+    source: str = "warehouse",
 ) -> pd.DataFrame:
+    src = _normalize_source(source)
+    if src == "samples":
+        return _load_samples_dataframe()
     wh = warehouse or _get_warehouse()
     start = pd.to_datetime(start_date, errors="coerce").date()
     end = pd.to_datetime(end_date, errors="coerce").date()
@@ -115,7 +170,6 @@ def build_deposits(df: pd.DataFrame) -> List[Deposit]:
             amount=float(abs(amt)),
             account_or_item=account,
             entity_name=entity_name,
-            # Temporary fallback until full resolver lands (Increment 3).
             entity_type=_clean_str(row.get("entity_type")) or "Customer",
         )
         note = _private_note(row)
@@ -190,12 +244,13 @@ def export_deposits(
     warehouse: Optional[WarehouseBase] = None,
     exporter: Optional[QBOGatewayExporter] = None,
     batch_size: int = 50,
+    source: str = "warehouse",
 ) -> dict:
     env = (environment or qbo_config.get_default_environment()).lower()
     if auto_create is None:
         auto_create = env == "sandbox"
 
-    df = load_categorized_transactions(week_start, week_end, warehouse)
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
     deposits = build_deposits(df)
     exp = exporter or QBOGatewayExporter()
     responses = _export_deposits(
@@ -219,12 +274,13 @@ def export_expenses(
     warehouse: Optional[WarehouseBase] = None,
     exporter: Optional[QBOGatewayExporter] = None,
     batch_size: int = 50,
+    source: str = "warehouse",
 ) -> dict:
     env = (environment or qbo_config.get_default_environment()).lower()
     if auto_create is None:
         auto_create = env == "sandbox"
 
-    df = load_categorized_transactions(week_start, week_end, warehouse)
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
     expenses = build_expenses(df)
     exp = exporter or QBOGatewayExporter()
     responses = _export_expenses(
