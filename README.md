@@ -142,7 +142,7 @@ Phase 2 now adds a QuickBooks export path:
 - Non-text logic is handled after regex: `categorize_week` calls `postprocess` from `src/rulebook/payee_vendor.py` (wired in `src/transforms/resolve_categorization.py`).
 - Current override: if `description` contains the word `CHECK` (case-insensitive, word boundary) and `amount` < 0, then `payee_vendor` is set to `PAYNW` with rule tag `payee_vendor@2025.11.21#post-check-amount` and source `postprocess`.
 - Future numeric/cross-field tweaks should follow the same pattern: keep regex-only rules in `_RULES`, and place numeric or multi-field conditions in the rulebook’s `postprocess`.
-- Gold output (`gold.categorized_bank_cc`) now derives `week_label` (`Week {week_num}`) and `bank_account_cc` (`{bank_account} {bank_cc_num}`) immediately after `week_num`, preserving schema order for downstream parquet/reporting.
+- Gold output (`gold.categorized_bank_cc`) now derives `week_label` (`Week {week_num}`); `bank_account_cc` comes from a centralized `bank_cc_num` → account mapping (falling back to `bank_account` + `bank_cc_num`); `realme_client_name` is derived from `entity_qbo`; and `description` is normalized by collapsing repeated spaces.
 
 ---
 
@@ -210,6 +210,14 @@ Phase 2 now adds a QuickBooks export path:
   2) Fetch categorized rows from DuckDB/BigQuery.
   3) Map them into accounting models (Deposits/Expenses) and build QBO payloads.
   4) POST to `/qbo/{client_id}/deposits` and `/expenses` with `X-API-Key`, `Idempotency-Key`, and `environment/auto_create` query params.
+
+#### Alternative Input Source (samples mode)
+
+- Purpose: run Phase 2 without hitting the warehouse by reading sample CSVs from `data_samples/qbo/` with the same schema expected by the exporters.
+- Airflow Variable: `QBO_EXPORT_SOURCE` = `warehouse` (default/fallback) or `samples`. Any missing/invalid value falls back to `warehouse`.
+- Warehouse mode (default): uses `gold.categorized_bank_cc` via `fetch_categorized_between`.
+- Samples mode: loads all CSVs under `data_samples/qbo/`, normalizes bank/account fields, and feeds the same deposit/expense builders (unknown rows are still skipped with warnings).
+- Switching modes does not affect Phase 1 ingestion or other `data_samples` folders.
 
 ### Phase 2 Architecture Notes
 

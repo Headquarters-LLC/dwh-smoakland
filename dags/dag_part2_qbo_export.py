@@ -58,7 +58,7 @@ with DAG(
         start, end = detect_week_bounds(prior.to_pydatetime())
         return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "logical_date_minus_7"}
 
-    def _common_settings() -> tuple[str, str, bool]:
+    def _common_settings() -> tuple[str, str, bool, str]:
         client_id = Variable.get("QBO_CLIENT_ID", default_var=os.getenv("AIRFLOW_VAR_QBO_CLIENT_ID", ""))
         if not client_id:
             raise ValueError("QBO_CLIENT_ID is required for Phase 2 exports")
@@ -75,28 +75,36 @@ with DAG(
         if env and str(env).lower() != "sandbox":
             # auto_create is only meaningful for sandbox flows
             auto_create = False
-        return client_id, env, auto_create
+        source = Variable.get(
+            "QBO_EXPORT_SOURCE",
+            default_var=os.getenv("AIRFLOW_VAR_QBO_EXPORT_SOURCE", "warehouse"),
+        )
+        if source.lower() not in {"warehouse", "samples"}:
+            source = "warehouse"
+        return client_id, env, auto_create, source
 
     @task()
     def export_deposits_task(week_info: dict) -> dict:
-        client_id, env, auto_create = _common_settings()
+        client_id, env, auto_create, source = _common_settings()
         return export_deposits(
             week_start=week_info["week_start"],
             week_end=week_info["week_end"],
             client_id=client_id,
             environment=env,
             auto_create=auto_create,
+            source=source,
         )
 
     @task()
     def export_expenses_task(week_info: dict) -> dict:
-        client_id, env, auto_create = _common_settings()
+        client_id, env, auto_create, source = _common_settings()
         return export_expenses(
             week_start=week_info["week_start"],
             week_end=week_info["week_end"],
             client_id=client_id,
             environment=env,
             auto_create=auto_create,
+            source=source,
         )
 
     week_info = resolve_week(logical_date="{{ ds }}")

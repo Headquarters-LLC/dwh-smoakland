@@ -37,11 +37,11 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
     ), 'SWD', 'aeropay-dmd-2035'),
 
     # --- SUB 9551 scoped overrides (based on dashboard_1, cf_account, or payee_vendor) ---
-    # 0) Vendor = City of Sacramento -> HAH
+    # 0) Vendor = City of Sacramento -> HAH 7 CA
     (re.compile(
         r'(?i)(?:\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b.*?\bPAYEE_VENDOR:[^|]*\bCITY\s+OF\s+SACRAMENTO\b'
         r'|\bPAYEE_VENDOR:[^|]*\bCITY\s+OF\s+SACRAMENTO\b.*?\b(?:BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bSUB\s+9551\b)'
-    ), 'HAH', 'sub-9551-city-of-sacramento'),
+    ), 'HAH 7 CA', 'sub-9551-city-of-sacramento'),
 
     # 1) dashboard_1 = New York -> NY
     (re.compile(
