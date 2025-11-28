@@ -15,6 +15,7 @@ BANK_CC_NUM_TO_ACCOUNT_CC: Dict[str, str] = {
     "7639": "CC 7639",
     "8267": "CC 8267",
     "7403": "Dama 7403",
+    "5597": "Dama 5597"
 }
 
 REALME_CLIENT_NAME_MAP: Dict[str, str] = {
@@ -64,7 +65,6 @@ CATEG_COLS: List[str] = [
     "extended_description",
     "amount",
     "balance",
-    "year",
 
     # 2) Valores categorizados (uno por rulebook)
     "payee_vendor",
@@ -75,8 +75,9 @@ CATEG_COLS: List[str] = [
     "qbo_account",
     "qbo_sub_account",
 
-    # 3) Week info lógico
+    # 3) Date info lógico
     "week_num",
+    "year",
 
     # 4) Metadatos de rulebooks (tag / confidence / source)
     "payee_vendor_rule_tag",
@@ -210,7 +211,8 @@ def _apply_resolver(df: pd.DataFrame, col: str, infer_fn: Callable[[dict], Tuple
             srcs.append("rule")
         else:
             # Normalize the fallback so downstream always gets a string
-            values.append("UNKNOWN")
+            fallback = "" if value_col == "qbo_sub_account" else "UNKNOWN"
+            values.append(fallback)
             tags.append("")
             confs.append(0.0)
             srcs.append("unknown")

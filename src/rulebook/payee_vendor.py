@@ -27,9 +27,36 @@ _RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r'(?i)DESCRIPTION:[^|]*\bDISPOJOY\b'), 'DISPOJOY'),
     (re.compile(r'(?i)DESCRIPTION:[^|]*\bCHASE\b'), 'CC'),
     (re.compile(r'(?i)DESCRIPTION:[^|]*\bERACTOLL\b'), 'ERACTOLL'),
-    (re.compile(r'(?i)DESCRIPTION:[^|]*\bAPSMOAKLAND\b'), 'APSMOAKLAND'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bAPSMOAKLAND\b'), 'AEROPAY'),
     (re.compile(r'(?i)DESCRIPTION:[^|]*MATRIX\s+TRUST'), 'MATRIX TRUST'),
     (re.compile(r'(?i)DESCRIPTION:[^|]*QUIK\s+STOP'), 'QUIK STOP'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bNABIFIVE\s+LLC\b'), 'NABIFIVE LLC'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bACCTVERIFY\b'), 'ACCTVERIFY'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bTETRA\s+HOUSE,\s*CO\.\b'), 'TETRA HOUSE, CO.'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bHAPPY\s+DAYS\b'), 'HAPPY DAYS DISPENSARY'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bFOREST\s+PARK\b'), 'FOREST PARK'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bALIBABA\b'), 'ALIBABA'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bNISSAN\b'), 'NISSAN'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bAUTOZONE\b'), 'AUTOZONE'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bDOF\b'), 'NY DOF'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bFRESHLY\s+BAKED\b'), 'FRESHLY BAKED'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bCONED\b'), 'EDISON'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bGEICO\b'), 'GEICO'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bHEADSET\s+INC\b'), 'HEADSET INC'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bEZPASS\b'), 'EZ-PASS'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bAMEX\b'), 'CC'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bNYS\s+HEMP\s+PROGRAM\b'), 'NYS HEMP PROGRAM'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bLEAFYWONDERSLLC\b'), 'LEAFYWONDERSLLC'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bPARKING\b'), 'PARKING'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bSHARE\s+DRAFT\s+CLEARING\b'), 'PAYNW'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bCASE\s+MANAGEMENT\b'), 'CASE MANAGEMENT'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bNATIONAL\s+GRID\b'), 'NATIONAL GRID'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bSTARLIFE\b'), 'STAR LIFE RETAIL'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bUNION\b'), 'UNION'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bCOMMUNITY\s+VETERA\b'), 'COMMUNITY VETERANS'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bTETRA\s+HOUSE\b'), 'TETRA HOUSE'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*\bIWS\b'), 'INTERSTATE WASTE SERVICES (IWS)'),
+    (re.compile(r'(?i)DESCRIPTION:[^|]*CA\s+DEPT\s+OF\s+FOOD\s+AND'), 'CALIFORNIA DEPARTMENT OF FOOD AND AGRICULTURE'),
 #---TextFSM rules below---------------------------------
     (re.compile(r'(?i)\b(?:ACCELA\ WEB)\b'), 'ACCELA WEB'),
     (re.compile(r'(?i)\b(?:ACME\ FIRE\ EXTINGUISHER\ CO)\b'), 'ACME FIRE EXTINGUISHER CO'),
@@ -306,6 +333,7 @@ def postprocess(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     desc = out["description"].fillna("").astype(str)
     amounts = pd.to_numeric(out["amount"], errors="coerce")
+     # 1) CHECK + amount < 0  → PAYNW 
     mask = desc.str.contains(_CHECK_PATTERN) & (amounts < 0)
     if not mask.any():
         return out
@@ -326,6 +354,29 @@ def postprocess(df: pd.DataFrame) -> pd.DataFrame:
 
     if "payee_rule_id" in out.columns:
         out.loc[mask, "payee_rule_id"] = pd.NA
+
+    #2) amount == 13272 → H & L PRIVATE SECURITY 
+
+    mask_hl = (amounts == 13272)
+    if mask_hl.any():
+        out.loc[mask_hl, "payee_vendor"] = "H & L PRIVATE SECURITY"
+
+        tag = f"{_RULEBOOK_NAME}@{_RULEBOOK_VERSION}#post-amount-13272"
+
+        for tag_col in ("payee_vendor_rule_tag", "payee_rule_tag"):
+            if tag_col in out.columns:
+                out.loc[mask_hl, tag_col] = tag
+
+        for src_col in ("payee_vendor_source", "payee_source"):
+            if src_col in out.columns:
+                out.loc[mask_hl, src_col] = _POSTPROCESS_SOURCE
+
+        for conf_col in ("payee_vendor_confidence", "payee_confidence"):
+            if conf_col in out.columns:
+                out.loc[mask_hl, conf_col] = 1.0
+
+        if "payee_rule_id" in out.columns:
+            out.loc[mask_hl, "payee_rule_id"] = pd.NA
 
     return out
 

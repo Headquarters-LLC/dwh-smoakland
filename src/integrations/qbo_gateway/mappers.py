@@ -20,6 +20,7 @@ def deposit_to_payload(deposit: Deposit) -> Dict[str, Any]:
     return {
         "deposit_to_account": deposit.deposit_to_account,
         "date": deposit.date.isoformat(),
+        "txn_id": deposit.txn_id,
         "doc_number": deposit.doc_number,
         "lines": lines,
         "private_note": deposit.private_note or "",
