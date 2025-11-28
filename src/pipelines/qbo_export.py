@@ -1,10 +1,12 @@
 from __future__ import annotations
 import os
 from datetime import date
-from typing import List, Optional
+from typing import List, Optional, Sequence
 import logging
-import pandas as pd
 from pathlib import Path
+
+import pandas as pd
+import requests
 
 from src.accounting.models import (
     Deposit,
@@ -16,11 +18,46 @@ from src.accounting.models import (
 from src.accounting.services import export_deposits as _export_deposits, export_expenses as _export_expenses
 from src.integrations.qbo_gateway.exporter import QBOGatewayExporter
 from src.integrations.qbo_gateway import config as qbo_config
+from src.notify.handlers import send_email
 from src.warehouse.warehouse_duckdb import DuckDBWarehouse
 from src.warehouse.warehouse_base import WarehouseBase
 
 log = logging.getLogger(__name__)
 SAMPLES_PATH = Path(__file__).resolve().parents[2] / "data_samples" / "qbo"
+SKIPPED_COLS = [
+    "bank_account",
+    "subentity",
+    "bank_account_cc",
+    "date",
+    "week_label",
+    "description",
+    "extended_description",
+    "amount",
+    "balance",
+    "year",
+    "payee_vendor",
+    "cf_account",
+    "dashboard_1",
+    "budget_owner",
+    "entity_qbo",
+    "qbo_account",
+    "qbo_sub_account",
+    "week_num",
+    "payee_vendor_rule_tag",
+    "cf_account_rule_tag",
+    "dashboard_1_rule_tag",
+    "budget_owner_rule_tag",
+    "entity_qbo_rule_tag",
+    "qbo_account_rule_tag",
+    "qbo_sub_account_rule_tag",
+    "bank_cc_num",
+    "txn_id",
+    "realme_client_name",
+    "drive_location",
+    "drive_folder",
+    "class",
+    "skip_reason",
+]
 
 
 def _get_warehouse(db_path: Optional[str] = None) -> WarehouseBase:
@@ -108,6 +145,124 @@ def _normalize_date(val) -> date:
     return ts.date()
 
 
+def _deposit_skip_reason(row: dict) -> str | None:
+    amt = pd.to_numeric(row.get("amount"), errors="coerce")
+    if pd.isna(amt) or amt <= 0:
+        return "non_positive_amount"
+
+    ba = _clean_str(row.get("bank_account"))
+    cc = _clean_str(row.get("bank_cc_num"))
+    deposit_to = _clean_str(row.get("bank_account_cc")) or f"{ba} {cc}".strip()
+    if not deposit_to or _is_unknown(deposit_to) or _is_unknown(ba) or _is_unknown(cc):
+        return "unknown_deposit_to_account"
+
+    account_raw = _clean_str(row.get("qbo_account"))
+    sub_account_raw = _clean_str(row.get("qbo_sub_account"))
+    account = _combine_account(account_raw, sub_account_raw)
+    if not account or _is_unknown(account) or _is_unknown(account_raw) or _is_unknown(sub_account_raw):
+        return "unknown_account"
+
+    entity_name = _clean_str(row.get("payee_vendor")) or None
+    if _is_unknown(entity_name):
+        return "unknown_entity"
+
+    return None
+
+
+def _expense_skip_reason(row: dict) -> str | None:
+    amt = pd.to_numeric(row.get("amount"), errors="coerce")
+    if pd.isna(amt) or amt >= 0:
+        return "non_negative_amount"
+
+    account_raw = _clean_str(row.get("qbo_account"))
+    sub_account_raw = _clean_str(row.get("qbo_sub_account"))
+    account = _combine_account(account_raw, sub_account_raw)
+    if not account or _is_unknown(account) or _is_unknown(account_raw) or _is_unknown(sub_account_raw):
+        return "unknown_account"
+
+    bank_cc = _clean_str(row.get("bank_account_cc"))
+    ba = _clean_str(row.get("bank_account"))
+    cc = _clean_str(row.get("bank_cc_num"))
+    bank = bank_cc or f"{ba} {cc}".strip()
+    if not bank or _is_unknown(bank) or _is_unknown(ba) or _is_unknown(cc):
+        return "unknown_bank_account"
+
+    vendor = _clean_str(row.get("payee_vendor"))
+    if not vendor or _is_unknown(vendor):
+        return "unknown_vendor"
+
+    return None
+
+
+def _filter_skipped_for_report(df: pd.DataFrame, exclude_reasons: set[str]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    mask = ~df["skip_reason"].isin(exclude_reasons)
+    return df.loc[mask].reset_index(drop=True)
+
+
+def _trim_columns(df: pd.DataFrame, keep: list[str]) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame(columns=keep)
+    out = df.copy()
+    for c in keep:
+        if c not in out.columns:
+            out[c] = ""
+    return out[keep]
+
+
+def _rows_by_txn(df: pd.DataFrame, txn_ids: List[str]) -> List[dict]:
+    if df is None or df.empty:
+        return []
+    mask = df["txn_id"].isin(txn_ids)
+    if not mask.any():
+        return []
+    return df.loc[mask].to_dict(orient="records")
+
+
+def _append_skip_rows(skipped: pd.DataFrame, rows: List[dict], reason: str) -> pd.DataFrame:
+    if rows is None or not rows:
+        return skipped
+    extras = []
+    for r in rows:
+        rd = dict(r)
+        rd["skip_reason"] = reason
+        extras.append(rd)
+    if skipped is None or skipped.empty:
+        return pd.DataFrame(extras)
+    return pd.concat([skipped, pd.DataFrame(extras)], ignore_index=True)
+
+
+def _idempotent_reuse_txns(responses: list[dict], items: Sequence) -> List[str]:
+    """
+    Gateway returns idempotent_reuse=True when it replays a prior request. That
+    means we effectively skipped sending the row in this run, so surface those
+    txn_ids for reporting.
+    """
+    if not responses or not items:
+        return []
+    txns: List[str] = []
+    for item, resp in zip(items, responses):
+        if isinstance(resp, dict) and resp.get("idempotent_reuse") and getattr(item, "txn_id", None):
+            txns.append(item.txn_id)
+    return txns
+
+
+def _infer_week_num(df: pd.DataFrame, default: Optional[str] = None) -> str | None:
+    if df is None or df.empty:
+        return default
+    wk = df.get("week_num")
+    if wk is None:
+        return default
+    vals = wk.dropna()
+    if vals.empty:
+        return default
+    try:
+        return str(int(vals.iloc[0]))
+    except Exception:
+        return default
+
+
 def _desc(row: dict) -> str:
     base = _clean_str(row.get("description"))
     ext = _clean_str(row.get("extended_description"))
@@ -136,34 +291,30 @@ def load_categorized_transactions(
     return wh.fetch_categorized_between(start, end)
 
 
-def build_deposits(df: pd.DataFrame) -> List[Deposit]:
+def build_deposits(df: pd.DataFrame) -> tuple[List[Deposit], pd.DataFrame]:
     if df is None or df.empty:
-        return []
+        return [], pd.DataFrame()
 
     out: List[Deposit] = []
+    skipped: list[dict] = []
     for _, row in df.iterrows():
-        amt = pd.to_numeric(row.get("amount"), errors="coerce")
-        if pd.isna(amt) or amt <= 0:
-            continue
-        deposit_to = _clean_str(row.get("bank_account_cc"))
-        if not deposit_to:
-            ba = _clean_str(row.get("bank_account"))
-            cc = _clean_str(row.get("bank_cc_num"))
-            deposit_to = f"{ba} {cc}".strip()
-        account = _combine_account(_clean_str(row.get("qbo_account")), _clean_str(row.get("qbo_sub_account")))
+        reason = _deposit_skip_reason(row)
         txn_id = _clean_str(row.get("txn_id"))
+        if reason:
+            log.warning("[qbo-export] skipping deposit txn_id=%s reason=%s", txn_id, reason)
+            rd = row.to_dict()
+            rd["skip_reason"] = reason
+            skipped.append(rd)
+            continue
 
-        if not deposit_to or _is_unknown(deposit_to):
-            log.warning("[qbo-export] skipping deposit txn_id=%s field=deposit_to_account reason=unknown_account", txn_id)
-            continue
-        if not account or _is_unknown(account):
-            # Without an account, QBO cannot categorize the line; skip for safety.
-            log.warning("[qbo-export] skipping deposit txn_id=%s field=account reason=unknown_account", txn_id)
-            continue
+        amt = pd.to_numeric(row.get("amount"), errors="coerce")
+        ba = _clean_str(row.get("bank_account"))
+        cc = _clean_str(row.get("bank_cc_num"))
+        deposit_to = _clean_str(row.get("bank_account_cc")) or f"{ba} {cc}".strip()
+        account_raw = _clean_str(row.get("qbo_account"))
+        sub_account_raw = _clean_str(row.get("qbo_sub_account"))
+        account = _combine_account(account_raw, sub_account_raw)
         entity_name = _clean_str(row.get("payee_vendor")) or None
-        if _is_unknown(entity_name):
-            log.warning("[qbo-export] skipping deposit txn_id=%s field=entity_name reason=unknown_entity", txn_id)
-            continue
 
         line = DepositLine(
             description=_desc(row),
@@ -182,37 +333,29 @@ def build_deposits(df: pd.DataFrame) -> List[Deposit]:
             private_note=note or None,
         )
         out.append(d)
-    return out
+    return out, pd.DataFrame(skipped)
 
 
-def build_expenses(df: pd.DataFrame) -> List[Expense]:
+def build_expenses(df: pd.DataFrame) -> tuple[List[Expense], pd.DataFrame]:
     if df is None or df.empty:
-        return []
+        return [], pd.DataFrame()
 
     out: List[Expense] = []
+    skipped: list[dict] = []
     for _, row in df.iterrows():
-        amt = pd.to_numeric(row.get("amount"), errors="coerce")
-        if pd.isna(amt) or amt >= 0:
-            continue
-        account = _combine_account(_clean_str(row.get("qbo_account")), _clean_str(row.get("qbo_sub_account")))
+        reason = _expense_skip_reason(row)
         txn_id = _clean_str(row.get("txn_id"))
-        if not account or _is_unknown(account):
-            log.warning("[qbo-export] skipping expense txn_id=%s field=expense_account reason=unknown_account", txn_id)
+        if reason:
+            log.warning("[qbo-export] skipping expense txn_id=%s reason=%s", txn_id, reason)
+            rd = row.to_dict()
+            rd["skip_reason"] = reason
+            skipped.append(rd)
             continue
 
-        bank = _clean_str(row.get("bank_account_cc"))
-        if not bank:
-            ba = _clean_str(row.get("bank_account"))
-            cc = _clean_str(row.get("bank_cc_num"))
-            bank = f"{ba} {cc}".strip()
-        if not bank or _is_unknown(bank):
-            log.warning("[qbo-export] skipping expense txn_id=%s field=bank_account reason=unknown_bank_account", txn_id)
-            continue
-
-        vendor = _clean_str(row.get("payee_vendor"))
-        if not vendor or _is_unknown(vendor):
-            log.warning("[qbo-export] skipping expense txn_id=%s field=vendor reason=unknown_vendor", txn_id)
-            continue
+        amt = pd.to_numeric(row.get("amount"), errors="coerce")
+        account_raw = _clean_str(row.get("qbo_account"))
+        sub_account_raw = _clean_str(row.get("qbo_sub_account"))
+        account = _combine_account(account_raw, sub_account_raw)
 
         line = ExpenseLine(
             expense_account=account,
@@ -221,6 +364,8 @@ def build_expenses(df: pd.DataFrame) -> List[Expense]:
             class_name=_clean_str(row.get("class")) or None,
         )
         note = _private_note(row)
+        bank = _clean_str(row.get("bank_account_cc")) or f"{_clean_str(row.get('bank_account'))} {_clean_str(row.get('bank_cc_num'))}".strip()
+        vendor = _clean_str(row.get("payee_vendor"))
         e = Expense(
             txn_id=txn_id,
             date=_normalize_date(row.get("date")),
@@ -231,7 +376,7 @@ def build_expenses(df: pd.DataFrame) -> List[Expense]:
             private_note=note or None,
         )
         out.append(e)
-    return out
+    return out, pd.DataFrame(skipped)
 
 
 def export_deposits(
@@ -251,17 +396,41 @@ def export_deposits(
         auto_create = env == "sandbox"
 
     df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
-    deposits = build_deposits(df)
+    deposits, skipped = build_deposits(df)
+    week_num = _infer_week_num(df)
     exp = exporter or QBOGatewayExporter()
-    responses = _export_deposits(
-        deposits,
-        exp,
-        client_id,
-        environment=env,
-        auto_create=auto_create,
-        batch_size=batch_size,
-    )
-    return {"count": len(deposits), "responses": responses}
+    responses = []
+    try:
+        responses = _export_deposits(
+            deposits,
+            exp,
+            client_id,
+            environment=env,
+            auto_create=auto_create,
+            batch_size=batch_size,
+        )
+    except requests.HTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 409:
+            txn_ids = [d.txn_id for d in deposits]
+            dup_rows = _rows_by_txn(df, txn_ids)
+            skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
+            log.warning("[qbo-export] duplicate deposit(s) detected -> marked as skipped duplicate_transaction")
+        else:
+            raise
+    reused = _rows_by_txn(df, _idempotent_reuse_txns(responses, deposits))
+    skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
+    skipped_path = None
+    if skipped is not None and not skipped.empty:
+        filtered = _filter_skipped_for_report(skipped, {"non_positive_amount"})
+        if not filtered.empty:
+            trimmed = _trim_columns(filtered, SKIPPED_COLS)
+            report_dir = "/opt/airflow/logs/reports"
+            os.makedirs(report_dir, exist_ok=True)
+            skipped_path = os.path.join(report_dir, f"skipped_deposits_{week_start}_{week_end}.csv")
+            trimmed.to_csv(skipped_path, index=False)
+
+    return {"count": len(deposits), "responses": responses, "skipped_path": skipped_path, "week_num": week_num}
 
 
 def export_expenses(
@@ -281,17 +450,41 @@ def export_expenses(
         auto_create = env == "sandbox"
 
     df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
-    expenses = build_expenses(df)
+    expenses, skipped = build_expenses(df)
+    week_num = _infer_week_num(df)
     exp = exporter or QBOGatewayExporter()
-    responses = _export_expenses(
-        expenses,
-        exp,
-        client_id,
-        environment=env,
-        auto_create=auto_create,
-        batch_size=batch_size,
-    )
-    return {"count": len(expenses), "responses": responses}
+    responses = []
+    try:
+        responses = _export_expenses(
+            expenses,
+            exp,
+            client_id,
+            environment=env,
+            auto_create=auto_create,
+            batch_size=batch_size,
+        )
+    except requests.HTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 409:
+            txn_ids = [e.txn_id for e in expenses]
+            dup_rows = _rows_by_txn(df, txn_ids)
+            skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
+            log.warning("[qbo-export] duplicate expense(s) detected -> marked as skipped duplicate_transaction")
+        else:
+            raise
+    reused = _rows_by_txn(df, _idempotent_reuse_txns(responses, expenses))
+    skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
+    skipped_path = None
+    if skipped is not None and not skipped.empty:
+        filtered = _filter_skipped_for_report(skipped, {"non_negative_amount"})
+        if not filtered.empty:
+            trimmed = _trim_columns(filtered, SKIPPED_COLS)
+            report_dir = "/opt/airflow/logs/reports"
+            os.makedirs(report_dir, exist_ok=True)
+            skipped_path = os.path.join(report_dir, f"skipped_expenses_{week_start}_{week_end}.csv")
+            trimmed.to_csv(skipped_path, index=False)
+
+    return {"count": len(expenses), "responses": responses, "skipped_path": skipped_path, "week_num": week_num}
 
 
 __all__ = [

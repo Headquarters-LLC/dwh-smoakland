@@ -154,6 +154,25 @@ with DAG(
             (pd.to_datetime(df["date"], errors="coerce") <= week_end)
         df = df.loc[mask].reset_index(drop=True)
 
+        # Deduplicate natural keys to avoid duplicate rows across re-ingests
+        dedupe_cols = [
+            "bank_account",
+            "bank_cc_num",
+            "subentity",
+            "date",
+            "amount",
+            "description",
+            "extended_description",
+        ]
+        existing = [c for c in dedupe_cols if c in df.columns]
+        before = len(df)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+        df = df.drop_duplicates(subset=existing, keep="first").reset_index(drop=True)
+        after = len(df)
+        if before != after:
+            print(f"[combine] deduped rows: {before}->{after} (removed {before-after})")
+
         m = basic_metrics(df)
         print(f"Combined metrics: {m} | week_source={week_info.get('source')}")
 

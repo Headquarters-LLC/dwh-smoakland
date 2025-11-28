@@ -10,6 +10,7 @@ from airflow.models import Variable
 from src.transforms.week_detect import detect_week_bounds, week_bounds_from_weeknum, try_week_from_path
 from src.pipelines.qbo_export import export_deposits, export_expenses
 from src.integrations.qbo_gateway import config as qbo_config
+from src.notify.handlers import send_email
 
 
 def _is_truthy(val: str | None) -> bool:
@@ -107,7 +108,26 @@ with DAG(
             source=source,
         )
 
+    @task()
+    def notify_skipped(week_info: dict, dep_result: dict, exp_result: dict) -> str:
+        dep_path = (dep_result or {}).get("skipped_path")
+        exp_path = (exp_result or {}).get("skipped_path")
+        attachments = [p for p in [dep_path, exp_path] if p]
+        if not attachments:
+            return "no skipped rows"
+
+        wk_num = dep_result.get("week_num") or exp_result.get("week_num")
+        wk_label = f"Week {wk_num}" if wk_num else f"{week_info['week_start']}..{week_info['week_end']}"
+        subject = f"[WARN] Skipped QBO exports {wk_label}"
+        html = (
+            "<p>Some rows were skipped in Phase 2 because they contained UNKNOWN values or were idempotent replays from the gateway.</p>"
+            "<p>See attached CSVs (deposits/expenses) for details.</p>"
+        )
+        send_email(subject=subject, html=html, files=attachments)
+        return f"sent email with {len(attachments)} attachments"
+
     week_info = resolve_week(logical_date="{{ ds }}")
     d = export_deposits_task(week_info)
     e = export_expenses_task(week_info)
-    week_info >> [d, e]
+    n = notify_skipped(week_info, d, e)
+    week_info >> [d, e] >> n
