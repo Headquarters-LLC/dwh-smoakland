@@ -200,6 +200,7 @@ Phase 2 now adds a QuickBooks export path:
 - Rows with “unknown” critical fields (vendor/account/bank, etc.) are skipped with a `[qbo-export]` warning to avoid sending bad payloads.
 - DAG parameters (Airflow Variables/env):
   - `QBO_CLIENT_ID` (required): UUID/realm used in `/qbo/{client_id}/...`.
+  - `QBO_REALME_CLIENTS` (optional): JSON object mapping `realme_client_name` (from `gold.categorized_bank_cc`) to gateway `client_id` UUIDs, e.g. `{"DeliverMD": "477751f2-...", "TPH786": "c19f83f1-..."}`. When present, exports run once and route each group to its matching realm; when missing/invalid, the DAG falls back to single-client mode using `QBO_CLIENT_ID`.
   - `QBO_ENVIRONMENT` (`sandbox` or `production`, default `sandbox`).
   - `QBO_AUTO_CREATE` (true/false): only used for sandbox; forced off for production.
   - `QBO_GATEWAY_BASE_URL` (e.g., `http://localhost:8000` or `http://qbo-gateway-api:8000`).
@@ -207,9 +208,10 @@ Phase 2 now adds a QuickBooks export path:
   - Optional: `QBO_GATEWAY_TIMEOUT`, `QBO_GATEWAY_RETRY_ATTEMPTS`, `QBO_GATEWAY_RETRY_BACKOFF`.
 - Trigger from Airflow UI: enable `part2_qbo_export`, set the Variables above, and run. The DAG will:
   1) Resolve the target week.
-  2) Fetch categorized rows from DuckDB/BigQuery.
-  3) Map them into accounting models (Deposits/Expenses) and build QBO payloads.
+  2) Fetch categorized rows from DuckDB/BigQuery once for the range.
+  3) Map them into accounting models (Deposits/Expenses), grouping by `realme_client_name` when the multi-realm map is provided so each set goes to its gateway `client_id`.
   4) POST to `/qbo/{client_id}/deposits` and `/expenses` with `X-API-Key`, `Idempotency-Key`, and `environment/auto_create` query params.
+  5) Rows with missing `realme_client_name` or unmapped values are skipped and reported in the skipped CSV alongside other validation skips.
 
 #### Alternative Input Source (samples mode)
 
