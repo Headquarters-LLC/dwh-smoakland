@@ -233,6 +233,14 @@ def _append_skip_rows(skipped: pd.DataFrame, rows: List[dict], reason: str) -> p
     return pd.concat([skipped, pd.DataFrame(extras)], ignore_index=True)
 
 
+def _merge_skipped(existing: pd.DataFrame, extra: pd.DataFrame) -> pd.DataFrame:
+    if extra is None or extra.empty:
+        return existing
+    if existing is None or existing.empty:
+        return extra
+    return pd.concat([existing, extra], ignore_index=True)
+
+
 def _idempotent_reuse_txns(responses: list[dict], items: Sequence) -> List[str]:
     """
     Gateway returns idempotent_reuse=True when it replays a prior request. That
@@ -263,6 +271,26 @@ def _infer_week_num(df: pd.DataFrame, default: Optional[str] = None) -> str | No
         return default
 
 
+def _write_skipped_report(
+    skipped: pd.DataFrame,
+    week_start: date | str,
+    week_end: date | str,
+    kind: str,
+    exclude_reasons: set[str],
+) -> str | None:
+    if skipped is None or skipped.empty:
+        return None
+    filtered = _filter_skipped_for_report(skipped, exclude_reasons)
+    if filtered.empty:
+        return None
+    trimmed = _trim_columns(filtered, SKIPPED_COLS)
+    report_dir = "/opt/airflow/logs/reports"
+    os.makedirs(report_dir, exist_ok=True)
+    skipped_path = os.path.join(report_dir, f"skipped_{kind}_{week_start}_{week_end}.csv")
+    trimmed.to_csv(skipped_path, index=False)
+    return skipped_path
+
+
 def _desc(row: dict) -> str:
     base = _clean_str(row.get("description"))
     ext = _clean_str(row.get("extended_description"))
@@ -272,7 +300,16 @@ def _desc(row: dict) -> str:
 
 
 def _private_note(row: dict) -> str:
-    return _clean_str(row.get("drive_location") or row.get("drive_folder"))
+    base = _clean_str(row.get("drive_location") or row.get("drive_folder") or "")
+    txn_id = row.get("txn_id")
+
+    if txn_id:
+        if base:
+            return f"{base}\nTransaction Id: {txn_id}"
+        else:
+            return f"Transaction Id: {txn_id}"
+
+    return base
 
 
 def load_categorized_transactions(
@@ -295,13 +332,18 @@ def build_deposits(df: pd.DataFrame) -> tuple[List[Deposit], pd.DataFrame]:
     if df is None or df.empty:
         return [], pd.DataFrame()
 
+    mask = pd.to_numeric(df.get("amount"), errors="coerce") > 0
+    working = df.loc[mask].copy()
+    if working.empty:
+        return [], pd.DataFrame()
+
     out: List[Deposit] = []
     skipped: list[dict] = []
-    for _, row in df.iterrows():
+    for _, row in working.iterrows():
         reason = _deposit_skip_reason(row)
         txn_id = _clean_str(row.get("txn_id"))
         if reason:
-            log.warning("[qbo-export] skipping deposit txn_id=%s reason=%s", txn_id, reason)
+            log.warning(f"[qbo-export] skipping deposit txn_id={txn_id} reason={reason}")
             rd = row.to_dict()
             rd["skip_reason"] = reason
             skipped.append(rd)
@@ -340,13 +382,18 @@ def build_expenses(df: pd.DataFrame) -> tuple[List[Expense], pd.DataFrame]:
     if df is None or df.empty:
         return [], pd.DataFrame()
 
+    mask = pd.to_numeric(df.get("amount"), errors="coerce") < 0
+    working = df.loc[mask].copy()
+    if working.empty:
+        return [], pd.DataFrame()
+
     out: List[Expense] = []
     skipped: list[dict] = []
-    for _, row in df.iterrows():
+    for _, row in working.iterrows():
         reason = _expense_skip_reason(row)
         txn_id = _clean_str(row.get("txn_id"))
         if reason:
-            log.warning("[qbo-export] skipping expense txn_id=%s reason=%s", txn_id, reason)
+            log.warning(f"[qbo-export] skipping expense txn_id={txn_id} reason={reason}")
             rd = row.to_dict()
             rd["skip_reason"] = reason
             skipped.append(rd)
@@ -420,16 +467,7 @@ def export_deposits(
             raise
     reused = _rows_by_txn(df, _idempotent_reuse_txns(responses, deposits))
     skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
-    skipped_path = None
-    if skipped is not None and not skipped.empty:
-        filtered = _filter_skipped_for_report(skipped, {"non_positive_amount"})
-        if not filtered.empty:
-            trimmed = _trim_columns(filtered, SKIPPED_COLS)
-            report_dir = "/opt/airflow/logs/reports"
-            os.makedirs(report_dir, exist_ok=True)
-            skipped_path = os.path.join(report_dir, f"skipped_deposits_{week_start}_{week_end}.csv")
-            trimmed.to_csv(skipped_path, index=False)
-
+    skipped_path = _write_skipped_report(skipped, week_start, week_end, "deposits", {"non_positive_amount"})
     return {"count": len(deposits), "responses": responses, "skipped_path": skipped_path, "week_num": week_num}
 
 
@@ -474,17 +512,186 @@ def export_expenses(
             raise
     reused = _rows_by_txn(df, _idempotent_reuse_txns(responses, expenses))
     skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
-    skipped_path = None
-    if skipped is not None and not skipped.empty:
-        filtered = _filter_skipped_for_report(skipped, {"non_negative_amount"})
-        if not filtered.empty:
-            trimmed = _trim_columns(filtered, SKIPPED_COLS)
-            report_dir = "/opt/airflow/logs/reports"
-            os.makedirs(report_dir, exist_ok=True)
-            skipped_path = os.path.join(report_dir, f"skipped_expenses_{week_start}_{week_end}.csv")
-            trimmed.to_csv(skipped_path, index=False)
-
+    skipped_path = _write_skipped_report(skipped, week_start, week_end, "expenses", {"non_negative_amount"})
     return {"count": len(expenses), "responses": responses, "skipped_path": skipped_path, "week_num": week_num}
+
+
+def _maybe_warn_mapping(realme: str, reason: str, count: int) -> None:
+    log.warning("[qbo-export] skipping realme_client_name=%s reason=%s count=%s", realme, reason, count)
+
+
+def _realme_series(df: pd.DataFrame) -> pd.Series:
+    if df is None or df.empty:
+        return pd.Series(dtype=object)
+    if "realme_client_name" not in df.columns:
+        return pd.Series([""] * len(df))
+    return df["realme_client_name"].apply(_clean_str)
+
+
+def export_deposits_multi(
+    week_start: date | str,
+    week_end: date | str,
+    realme_to_client: dict[str, str],
+    *,
+    environment: Optional[str] = None,
+    auto_create: Optional[bool] = None,
+    warehouse: Optional[WarehouseBase] = None,
+    exporter: Optional[QBOGatewayExporter] = None,
+    batch_size: int = 50,
+    source: str = "warehouse",
+) -> dict:
+    env = (environment or qbo_config.get_default_environment()).lower()
+    if auto_create is None:
+        auto_create = env == "sandbox"
+
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
+    week_num = _infer_week_num(df)
+    skipped: pd.DataFrame = pd.DataFrame()
+    if df is None or df.empty:
+        return {"total_realme": 0, "per_realme": {}, "skipped_path": None, "week_num": week_num}
+
+    working = df.copy()
+    working["_realme"] = _realme_series(working)
+    missing_mask = working["_realme"] == ""
+    if missing_mask.any():
+        missing_rows = working.loc[missing_mask]
+        skipped = _append_skip_rows(skipped, missing_rows.to_dict(orient="records"), "missing_realme_client_name")
+        log.warning("[qbo-export] skipping rows with missing realme_client_name count=%s", len(missing_rows))
+    grouped_df = working.loc[~missing_mask]
+
+    exp = exporter or QBOGatewayExporter()
+    per_realme: dict[str, dict] = {}
+
+    for realme, group in grouped_df.groupby("_realme"):
+        client_id = realme_to_client.get(realme)
+        if not client_id:
+            _maybe_warn_mapping(realme, "mapping_not_found", len(group))
+            skipped = _append_skip_rows(skipped, group.to_dict(orient="records"), "mapping_not_found")
+            continue
+
+        deposits, skipped_group = build_deposits(group)
+        skipped = _merge_skipped(skipped, skipped_group)
+        responses: list[dict] = []
+        try:
+            responses = _export_deposits(
+                deposits,
+                exp,
+                client_id,
+                environment=env,
+                auto_create=auto_create,
+                batch_size=batch_size,
+            )
+        except requests.HTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status == 409:
+                txn_ids = [d.txn_id for d in deposits]
+                dup_rows = _rows_by_txn(group, txn_ids)
+                skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
+                log.warning("[qbo-export] duplicate deposit(s) detected -> marked as skipped duplicate_transaction")
+            else:
+                raise
+        reused = _rows_by_txn(group, _idempotent_reuse_txns(responses, deposits))
+        skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
+        log.info(
+            "[accounting] Exported %s deposits for realme=%s client_id=%s (env=%s, auto_create=%s)",
+            len(deposits),
+            realme,
+            client_id,
+            env,
+            auto_create,
+        )
+        per_realme[realme] = {"client_id": client_id, "deposits": len(deposits), "responses": responses}
+
+    skipped_path = _write_skipped_report(skipped, week_start, week_end, "deposits", {"non_positive_amount"})
+    return {
+        "total_realme": len(per_realme),
+        "per_realme": per_realme,
+        "skipped_path": skipped_path,
+        "week_num": week_num,
+    }
+
+
+def export_expenses_multi(
+    week_start: date | str,
+    week_end: date | str,
+    realme_to_client: dict[str, str],
+    *,
+    environment: Optional[str] = None,
+    auto_create: Optional[bool] = None,
+    warehouse: Optional[WarehouseBase] = None,
+    exporter: Optional[QBOGatewayExporter] = None,
+    batch_size: int = 50,
+    source: str = "warehouse",
+) -> dict:
+    env = (environment or qbo_config.get_default_environment()).lower()
+    if auto_create is None:
+        auto_create = env == "sandbox"
+
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
+    week_num = _infer_week_num(df)
+    skipped: pd.DataFrame = pd.DataFrame()
+    if df is None or df.empty:
+        return {"total_realme": 0, "per_realme": {}, "skipped_path": None, "week_num": week_num}
+
+    working = df.copy()
+    working["_realme"] = _realme_series(working)
+    missing_mask = working["_realme"] == ""
+    if missing_mask.any():
+        missing_rows = working.loc[missing_mask]
+        skipped = _append_skip_rows(skipped, missing_rows.to_dict(orient="records"), "missing_realme_client_name")
+        log.warning("[qbo-export] skipping rows with missing realme_client_name count=%s", len(missing_rows))
+    grouped_df = working.loc[~missing_mask]
+
+    exp = exporter or QBOGatewayExporter()
+    per_realme: dict[str, dict] = {}
+
+    for realme, group in grouped_df.groupby("_realme"):
+        client_id = realme_to_client.get(realme)
+        if not client_id:
+            _maybe_warn_mapping(realme, "mapping_not_found", len(group))
+            skipped = _append_skip_rows(skipped, group.to_dict(orient="records"), "mapping_not_found")
+            continue
+
+        expenses, skipped_group = build_expenses(group)
+        skipped = _merge_skipped(skipped, skipped_group)
+        responses: list[dict] = []
+        try:
+            responses = _export_expenses(
+                expenses,
+                exp,
+                client_id,
+                environment=env,
+                auto_create=auto_create,
+                batch_size=batch_size,
+            )
+        except requests.HTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status == 409:
+                txn_ids = [e.txn_id for e in expenses]
+                dup_rows = _rows_by_txn(group, txn_ids)
+                skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
+                log.warning("[qbo-export] duplicate expense(s) detected -> marked as skipped duplicate_transaction")
+            else:
+                raise
+        reused = _rows_by_txn(group, _idempotent_reuse_txns(responses, expenses))
+        skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
+        log.info(
+            "[accounting] Exported %s expenses for realme=%s client_id=%s (env=%s, auto_create=%s)",
+            len(expenses),
+            realme,
+            client_id,
+            env,
+            auto_create,
+        )
+        per_realme[realme] = {"client_id": client_id, "expenses": len(expenses), "responses": responses}
+
+    skipped_path = _write_skipped_report(skipped, week_start, week_end, "expenses", {"non_negative_amount"})
+    return {
+        "total_realme": len(per_realme),
+        "per_realme": per_realme,
+        "skipped_path": skipped_path,
+        "week_num": week_num,
+    }
 
 
 __all__ = [
@@ -493,4 +700,6 @@ __all__ = [
     "build_expenses",
     "export_deposits",
     "export_expenses",
+    "export_deposits_multi",
+    "export_expenses_multi",
 ]

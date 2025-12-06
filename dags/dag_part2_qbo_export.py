@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 import os
 import pandas as pd
+import logging
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
 
 from src.transforms.week_detect import detect_week_bounds, week_bounds_from_weeknum, try_week_from_path
-from src.pipelines.qbo_export import export_deposits, export_expenses
+from src.pipelines.qbo_export import export_deposits, export_expenses, export_deposits_multi, export_expenses_multi
 from src.integrations.qbo_gateway import config as qbo_config
 from src.notify.handlers import send_email
 
@@ -20,6 +21,7 @@ def _is_truthy(val: str | None) -> bool:
 
 
 DEFAULT_ARGS = {"owner": "smoakland", "retries": 0}
+log = logging.getLogger(__name__)
 
 with DAG(
     dag_id="part2_qbo_export",
@@ -59,10 +61,18 @@ with DAG(
         start, end = detect_week_bounds(prior.to_pydatetime())
         return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "logical_date_minus_7"}
 
-    def _common_settings() -> tuple[str, str, bool, str]:
+    def _resolve_realme_mapping() -> dict[str, str]:
+        mappings = qbo_config.get_realme_clients_map()
+        if mappings:
+            log.info("[qbo-export] loaded QBO_REALME_CLIENTS mappings count=%s", len(mappings))
+        else:
+            log.warning("[qbo-export] QBO_REALME_CLIENTS empty or invalid; falling back to single-client mode")
+        return mappings
+
+    def _common_settings(realme_to_client: dict[str, str]) -> tuple[str, str, bool, str]:
         client_id = Variable.get("QBO_CLIENT_ID", default_var=os.getenv("AIRFLOW_VAR_QBO_CLIENT_ID", ""))
-        if not client_id:
-            raise ValueError("QBO_CLIENT_ID is required for Phase 2 exports")
+        if not realme_to_client and not client_id:
+            raise ValueError("QBO_CLIENT_ID is required when QBO_REALME_CLIENTS is not configured")
         env = Variable.get(
             "QBO_ENVIRONMENT",
             default_var=os.getenv("AIRFLOW_VAR_QBO_ENVIRONMENT", qbo_config.get_default_environment()),
@@ -86,7 +96,17 @@ with DAG(
 
     @task()
     def export_deposits_task(week_info: dict) -> dict:
-        client_id, env, auto_create, source = _common_settings()
+        realme_to_client = _resolve_realme_mapping()
+        client_id, env, auto_create, source = _common_settings(realme_to_client)
+        if realme_to_client:
+            return export_deposits_multi(
+                week_start=week_info["week_start"],
+                week_end=week_info["week_end"],
+                realme_to_client=realme_to_client,
+                environment=env,
+                auto_create=auto_create,
+                source=source,
+            )
         return export_deposits(
             week_start=week_info["week_start"],
             week_end=week_info["week_end"],
@@ -98,7 +118,17 @@ with DAG(
 
     @task()
     def export_expenses_task(week_info: dict) -> dict:
-        client_id, env, auto_create, source = _common_settings()
+        realme_to_client = _resolve_realme_mapping()
+        client_id, env, auto_create, source = _common_settings(realme_to_client)
+        if realme_to_client:
+            return export_expenses_multi(
+                week_start=week_info["week_start"],
+                week_end=week_info["week_end"],
+                realme_to_client=realme_to_client,
+                environment=env,
+                auto_create=auto_create,
+                source=source,
+            )
         return export_expenses(
             week_start=week_info["week_start"],
             week_end=week_info["week_end"],

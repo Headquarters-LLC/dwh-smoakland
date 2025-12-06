@@ -1,7 +1,12 @@
 import logging
 import pandas as pd
 
-from src.pipelines.qbo_export import build_expenses, build_deposits
+from src.pipelines.qbo_export import (
+    build_expenses,
+    build_deposits,
+    export_deposits_multi,
+    export_expenses_multi,
+)
 from src.pipelines.qbo_export import _filter_skipped_for_report  # type: ignore
 
 
@@ -185,3 +190,156 @@ def test_load_categorized_transactions_defaults_to_warehouse(monkeypatch):
     deposits, skipped = qbo_export.build_deposits(df)
     assert len(deposits) == 1
     assert skipped.empty
+
+
+class _FakeExporter:
+    def __init__(self):
+        self.sent_deposits = []
+        self.sent_expenses = []
+
+    def send_deposits(self, client_id, deposits, **kwargs):
+        self.sent_deposits.append({"client_id": client_id, "txn_ids": [d.txn_id for d in deposits]})
+        return [{"client_id": client_id, "count": len(deposits)}]
+
+    def send_expenses(self, client_id, expenses, **kwargs):
+        self.sent_expenses.append({"client_id": client_id, "txn_ids": [e.txn_id for e in expenses]})
+        return [{"client_id": client_id, "count": len(expenses)}]
+
+
+def test_export_deposits_multi_routes_by_realme(monkeypatch, caplog):
+    from src.pipelines import qbo_export
+
+    df = pd.DataFrame(
+        [
+            {
+                "txn_id": "d1",
+                "amount": 100.0,
+                "bank_account": "BA",
+                "bank_cc_num": "1111",
+                "payee_vendor": "Client A",
+                "description": "dep1",
+                "date": "2025-01-01",
+                "qbo_account": "Income",
+                "qbo_sub_account": "Sales",
+                "realme_client_name": "DeliverMD",
+            },
+            {
+                "txn_id": "d2",
+                "amount": 150.0,
+                "bank_account": "BA",
+                "bank_cc_num": "1111",
+                "payee_vendor": "Client A",
+                "description": "dep2",
+                "date": "2025-01-02",
+                "qbo_account": "Income",
+                "qbo_sub_account": "Sales",
+                "realme_client_name": "DeliverMD",
+            },
+            {
+                "txn_id": "d3",
+                "amount": 200.0,
+                "bank_account": "BA2",
+                "bank_cc_num": "2222",
+                "payee_vendor": "Client B",
+                "description": "dep3",
+                "date": "2025-01-03",
+                "qbo_account": "Income",
+                "qbo_sub_account": "Sales",
+                "realme_client_name": "TPH786",
+            },
+            {
+                "txn_id": "d4",
+                "amount": 75.0,
+                "bank_account": "BA3",
+                "bank_cc_num": "3333",
+                "payee_vendor": "Client C",
+                "description": "dep4",
+                "date": "2025-01-04",
+                "qbo_account": "Income",
+                "qbo_sub_account": "Sales",
+                "realme_client_name": "UnknownRealme",
+            },
+            {
+                "txn_id": "d5",
+                "amount": 50.0,
+                "bank_account": "BA3",
+                "bank_cc_num": "3333",
+                "payee_vendor": "Client D",
+                "description": "dep5",
+                "date": "2025-01-05",
+                "qbo_account": "Income",
+                "qbo_sub_account": "Sales",
+                "realme_client_name": None,
+            },
+        ]
+    )
+
+    monkeypatch.setattr(qbo_export, "load_categorized_transactions", lambda *args, **kwargs: df)
+    monkeypatch.setattr(qbo_export, "_write_skipped_report", lambda *args, **kwargs: None)
+
+    fake_exporter = _FakeExporter()
+    mappings = {"DeliverMD": "client-1", "TPH786": "client-2"}
+    with caplog.at_level(logging.WARNING):
+        result = export_deposits_multi(
+            week_start="2025-01-01",
+            week_end="2025-01-07",
+            realme_to_client=mappings,
+            exporter=fake_exporter,
+            environment="sandbox",
+            auto_create=True,
+        )
+
+    deposits_by_client = {rec["client_id"]: rec["txn_ids"] for rec in fake_exporter.sent_deposits}
+    assert deposits_by_client["client-1"] == ["d1", "d2"]
+    assert deposits_by_client["client-2"] == ["d3"]
+    assert "UnknownRealme" not in result["per_realme"]
+    assert "client-1" in deposits_by_client and "client-2" in deposits_by_client
+    assert all("d4" not in txns and "d5" not in txns for txns in deposits_by_client.values())
+    assert result["total_realme"] == 2
+    assert any("missing realme_client_name" in rec.message for rec in caplog.records)
+    assert any("mapping_not_found" in rec.message for rec in caplog.records)
+
+
+def test_export_expenses_multi_handles_empty_and_missing_mapping(monkeypatch):
+    from src.pipelines import qbo_export
+
+    df = pd.DataFrame(
+        [
+            {
+                "txn_id": "e1",
+                "amount": -25.0,
+                "bank_account": "BA",
+                "bank_cc_num": "4444",
+                "payee_vendor": "Vendor X",
+                "description": "exp1",
+                "date": "2025-01-02",
+                "qbo_account": "Expenses",
+                "qbo_sub_account": "Ops",
+                "realme_client_name": "UnknownRealme",
+            }
+        ]
+    )
+
+    monkeypatch.setattr(qbo_export, "load_categorized_transactions", lambda *args, **kwargs: df)
+    monkeypatch.setattr(qbo_export, "_write_skipped_report", lambda *args, **kwargs: None)
+    fake_exporter = _FakeExporter()
+
+    result = export_expenses_multi(
+        week_start="2025-01-01",
+        week_end="2025-01-07",
+        realme_to_client={},
+        exporter=fake_exporter,
+        environment="sandbox",
+    )
+    assert result["per_realme"] == {}
+    assert fake_exporter.sent_expenses == []
+
+    monkeypatch.setattr(qbo_export, "load_categorized_transactions", lambda *args, **kwargs: pd.DataFrame())
+    empty_result = export_expenses_multi(
+        week_start="2025-01-01",
+        week_end="2025-01-07",
+        realme_to_client={"DeliverMD": "client-1"},
+        exporter=fake_exporter,
+    )
+    assert empty_result["total_realme"] == 0
+    assert empty_result["per_realme"] == {}
