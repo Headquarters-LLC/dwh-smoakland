@@ -58,6 +58,11 @@ def get_retry_backoff() -> float:
         return 1.5
 
 
+def is_dry_run() -> bool:
+    val = _get_var("QBO_GATEWAY_DRY_RUN", "false")
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def get_realme_clients_map() -> dict[str, str]:
     """
     Returns the mapping from realme_client_name to QBO Gateway client_id.
@@ -88,4 +93,5 @@ __all__ = [
     "get_retry_attempts",
     "get_retry_backoff",
     "get_realme_clients_map",
+    "is_dry_run",
 ]

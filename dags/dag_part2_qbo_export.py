@@ -7,11 +7,13 @@ import logging
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Variable
+from airflow.operators.python import get_current_context
 
 from src.transforms.week_detect import detect_week_bounds, week_bounds_from_weeknum, try_week_from_path
 from src.pipelines.qbo_export import export_deposits, export_expenses, export_deposits_multi, export_expenses_multi
 from src.integrations.qbo_gateway import config as qbo_config
 from src.notify.handlers import send_email
+from src.utils.week_resolution import resolve_week_info
 
 
 def _is_truthy(val: str | None) -> bool:
@@ -29,37 +31,24 @@ with DAG(
     schedule_interval=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
-    tags=["smoakland", "part2", "qbo"],
+    tags=["part2", "qbo"],
 ) as dag:
 
     @task()
     def resolve_week(logical_date: str) -> dict:
-        """
-        Same resolution strategy as Phase 1:
-          1) Airflow Variables WEEK_YEAR + WEEK_NUM
-          2) Folder name hint (if INPUT_FOLDER matches weekNN)
-          3) logical_date - 7d fallback
-        """
+        ctx = get_current_context()
+        dag_run = ctx.get("dag_run")
+        conf = dag_run.conf or {} if dag_run else {}
         input_folder = Variable.get(
             "INPUT_FOLDER",
             default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
         )
-        week_num = Variable.get("WEEK_NUM", default_var=None)
-        week_year = Variable.get("WEEK_YEAR", default_var=None)
-        if week_num:
-            y = int(week_year) if week_year else pd.to_datetime(logical_date).year
-            start, end = week_bounds_from_weeknum(y, int(week_num))
-            return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "variables"}
-
-        default_dt = pd.to_datetime(logical_date).to_pydatetime()
-        wb = try_week_from_path(input_folder, default_dt)
-        if wb:
-            start, end = wb
-            return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "folder_name"}
-
-        prior = pd.to_datetime(logical_date) - pd.Timedelta(days=7)
-        start, end = detect_week_bounds(prior.to_pydatetime())
-        return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "logical_date_minus_7"}
+        return resolve_week_info(
+            logical_date=logical_date,
+            input_folder=input_folder,
+            dag_run_conf=conf,
+            extra={"input_folder": input_folder},
+        )
 
     def _resolve_realme_mapping() -> dict[str, str]:
         mappings = qbo_config.get_realme_clients_map()

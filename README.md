@@ -109,6 +109,20 @@ Phase 2 now adds a QuickBooks export path:
    ```
    Successful calls should appear in the Airflow UI as externally triggered DAG runs; follow task logs to verify expected behavior (Phase 2 tasks will still depend on the QBO Gateway connectivity).
 
+### API run configuration (dag_run.conf)
+
+- Week resolution priority (both DAGs):  
+  1) `dag_run.conf` → `week_year` + `week_num`  
+  2) Airflow Variables `WEEK_YEAR` + `WEEK_NUM`  
+  3) `logical_date - 7 days`  
+  4) Folder hint via `try_week_from_path`
+- `part1_ingestion` optional conf fields:  
+  - `week_year`, `week_num` (override week)  
+  - `input_subdir` (joined under `INPUT_FOLDER` for CSV lookup)  
+  - `client_id`, `notify_email` (carried in resolved week_info for downstream consumers)  
+- `part2_qbo_export` optional conf fields:  
+  - `week_year`, `week_num` (override week)
+
 ---
 
 ## Repo Layout

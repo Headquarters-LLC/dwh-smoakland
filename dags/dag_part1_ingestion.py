@@ -14,15 +14,11 @@ from airflow.utils.trigger_rule import TriggerRule
 from src.io.storage_local import LocalStorage
 from src.parsers import detect_source, get_parser
 from src.dq.checks import basic_metrics, assert_no_dup_txn_id, assert_required_columns
-from src.transforms.week_detect import (
-    detect_week_bounds,
-    week_bounds_from_weeknum,
-    try_week_from_path,
-)
 from src.warehouse.warehouse_duckdb import DuckDBWarehouse
 from src.transforms.gold_consolidation import compute_prev_balance, consolidate_week, reconcile_summary
 from src.notify.recon import notify_recon_failure
 from transforms.resolve_categorization import categorize_week
+from src.utils.week_resolution import resolve_week_info
 
 
 def _is_truthy(val: str | None) -> bool:
@@ -39,19 +35,16 @@ with DAG(
     schedule_interval=None,          # Manual or via API
     catchup=False,
     default_args=DEFAULT_ARGS,
-    tags=["smoakland", "part1"],
+    tags=["ETL", "part1"],
 ) as dag:
 
     @task()
-    def list_csvs() -> list[str]:
+    def list_csvs(run_params: dict) -> list[str]:
         """
         List CSVs from the configured input folder (local dev).
         This remains decoupled: for GDrive you'll swap the adapter.
         """
-        input_folder = Variable.get(
-            "INPUT_FOLDER",
-            default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
-        )
+        input_folder = run_params["input_folder"]
         storage = LocalStorage(base_path=input_folder)
         files = [f for f in storage.list_files(extension=".csv")]
         if not files:
@@ -59,33 +52,36 @@ with DAG(
         return files
 
     @task()
-    def resolve_week(input_folder: str, logical_date: str) -> dict:
-        """
-        Priority:
-          1) Airflow Variables: WEEK_YEAR + WEEK_NUM
-          2) Folder name: .../week_37, .../week37-2025
-          3) Fallback: prior week from (logical_date - 7d)  <- semana vencida
-        Returns ISO strings and a 'source' hint.
-        """
-        # 1) Variables
-        week_num = Variable.get("WEEK_NUM", default_var=None)
-        week_year = Variable.get("WEEK_YEAR", default_var=None)
-        if week_num:
-            y = int(week_year) if week_year else pd.to_datetime(logical_date).year
-            start, end = week_bounds_from_weeknum(y, int(week_num))
-            return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "variables"}
+    def build_run_params() -> dict:
+        ctx = get_current_context()
+        dag_run = ctx.get("dag_run")
+        conf = dag_run.conf or {} if dag_run else {}
+        base_input_folder = Variable.get(
+            "INPUT_FOLDER",
+            default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
+        )
+        input_subdir = conf.get("input_subdir")
+        input_folder = os.path.join(base_input_folder, input_subdir) if input_subdir else base_input_folder
+        logical_date = ctx.get("logical_date")
+        logical_date_str = logical_date.isoformat() if logical_date else ctx.get("ds")
+        return {"input_folder": input_folder, "conf": conf, "logical_date": logical_date_str}
 
-        # 2) Folder name
-        default_dt = pd.to_datetime(logical_date).to_pydatetime()
-        wb = try_week_from_path(input_folder, default_dt)
-        if wb:
-            start, end = wb
-            return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "folder_name"}
-
-        # 3) Fallback: prior week from (logical_date - 7d)
-        prior = pd.to_datetime(logical_date) - pd.Timedelta(days=7)
-        start, end = detect_week_bounds(prior.to_pydatetime())
-        return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "logical_date_minus_7"}
+    @task()
+    def resolve_week(run_params: dict) -> dict:
+        conf = run_params.get("conf", {})
+        input_folder = run_params["input_folder"]
+        logical_date = run_params["logical_date"]
+        extra = {
+            "client_id": conf.get("client_id"),
+            "notify_email": conf.get("notify_email"),
+            "input_folder": input_folder,
+        }
+        return resolve_week_info(
+            logical_date=logical_date,
+            input_folder=input_folder,
+            dag_run_conf=conf,
+            extra=extra,
+        )
 
     @task()
     def parse_one(file_path: str) -> str:
@@ -193,14 +189,11 @@ with DAG(
         return f"rows={len(df)} -> core_transactions"
 
     # wiring (with task mapping)
-    input_folder = Variable.get(
-        "INPUT_FOLDER",
-        default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
-    )
     # logical_date via macro; ds = YYYY-MM-DD (UTC midnight)
-    week_info = resolve_week(input_folder=input_folder, logical_date="{{ ds }}")
+    run_params = build_run_params()
+    week_info = resolve_week(run_params)
 
-    files = list_csvs()
+    files = list_csvs(run_params)
     parsed = parse_one.expand(file_path=files)                 # fan-out per file
     combined = combine_enrich_check(parsed, week_info)         # fan-in + week enrich
     rows = write_core_transactions(combined)

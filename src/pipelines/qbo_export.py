@@ -445,6 +445,12 @@ def export_deposits(
     df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
     deposits, skipped = build_deposits(df)
     week_num = _infer_week_num(df)
+    log.info("[qbo-export] dry_run=%s", qbo_config.is_dry_run())
+    if qbo_config.is_dry_run():
+        log.info("[qbo-export] DRY RUN enabled -> skipping gateway calls for deposits")
+        skipped_path = _write_skipped_report(skipped, week_start, week_end, "deposits", {"non_positive_amount"})
+        return {"count": len(deposits), "responses": [], "skipped_path": skipped_path, "week_num": week_num}
+
     exp = exporter or QBOGatewayExporter()
     responses = []
     try:
@@ -464,7 +470,10 @@ def export_deposits(
             skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
             log.warning("[qbo-export] duplicate deposit(s) detected -> marked as skipped duplicate_transaction")
         else:
-            raise
+            log.error("[qbo-export] gateway error status=%s -> marking deposits as skipped gateway_error", status, exc_info=True)
+            skip_rows = _rows_by_txn(df, [d.txn_id for d in deposits])
+            skipped = _append_skip_rows(skipped, skip_rows, reason="gateway_error")
+            responses = []
     reused = _rows_by_txn(df, _idempotent_reuse_txns(responses, deposits))
     skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
     skipped_path = _write_skipped_report(skipped, week_start, week_end, "deposits", {"non_positive_amount"})
@@ -490,6 +499,12 @@ def export_expenses(
     df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
     expenses, skipped = build_expenses(df)
     week_num = _infer_week_num(df)
+    log.info("[qbo-export] dry_run=%s", qbo_config.is_dry_run())
+    if qbo_config.is_dry_run():
+        log.info("[qbo-export] DRY RUN enabled -> skipping gateway calls for expenses")
+        skipped_path = _write_skipped_report(skipped, week_start, week_end, "expenses", {"non_negative_amount"})
+        return {"count": len(expenses), "responses": [], "skipped_path": skipped_path, "week_num": week_num}
+
     exp = exporter or QBOGatewayExporter()
     responses = []
     try:
@@ -509,7 +524,10 @@ def export_expenses(
             skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
             log.warning("[qbo-export] duplicate expense(s) detected -> marked as skipped duplicate_transaction")
         else:
-            raise
+            log.error("[qbo-export] gateway error status=%s -> marking expenses as skipped gateway_error", status, exc_info=True)
+            skip_rows = _rows_by_txn(df, [e.txn_id for e in expenses])
+            skipped = _append_skip_rows(skipped, skip_rows, reason="gateway_error")
+            responses = []
     reused = _rows_by_txn(df, _idempotent_reuse_txns(responses, expenses))
     skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
     skipped_path = _write_skipped_report(skipped, week_start, week_end, "expenses", {"non_negative_amount"})
@@ -550,6 +568,16 @@ def export_deposits_multi(
     if df is None or df.empty:
         return {"total_realme": 0, "per_realme": {}, "skipped_path": None, "week_num": week_num}
 
+    if qbo_config.is_dry_run():
+        log.info("[qbo-export] DRY RUN enabled -> skipping gateway calls for expenses (multi)")
+        skipped_path = _write_skipped_report(skipped, week_start, week_end, "expenses", {"non_negative_amount"})
+        return {"total_realme": 0, "per_realme": {}, "skipped_path": skipped_path, "week_num": week_num}
+
+    if qbo_config.is_dry_run():
+        log.info("[qbo-export] DRY RUN enabled -> skipping gateway calls for deposits (multi)")
+        skipped_path = _write_skipped_report(skipped, week_start, week_end, "deposits", {"non_positive_amount"})
+        return {"total_realme": 0, "per_realme": {}, "skipped_path": skipped_path, "week_num": week_num}
+
     working = df.copy()
     working["_realme"] = _realme_series(working)
     missing_mask = working["_realme"] == ""
@@ -589,7 +617,14 @@ def export_deposits_multi(
                 skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
                 log.warning("[qbo-export] duplicate deposit(s) detected -> marked as skipped duplicate_transaction")
             else:
-                raise
+                log.error(
+                    "[qbo-export] gateway error status=%s -> marking deposits as skipped gateway_error",
+                    status,
+                    exc_info=True,
+                )
+                skip_rows = _rows_by_txn(group, [d.txn_id for d in deposits])
+                skipped = _append_skip_rows(skipped, skip_rows, reason="gateway_error")
+                responses = []
         reused = _rows_by_txn(group, _idempotent_reuse_txns(responses, deposits))
         skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
         log.info(
@@ -672,7 +707,14 @@ def export_expenses_multi(
                 skipped = _append_skip_rows(skipped, dup_rows, reason="duplicate_transaction")
                 log.warning("[qbo-export] duplicate expense(s) detected -> marked as skipped duplicate_transaction")
             else:
-                raise
+                log.error(
+                    "[qbo-export] gateway error status=%s -> marking expenses as skipped gateway_error",
+                    status,
+                    exc_info=True,
+                )
+                skip_rows = _rows_by_txn(group, [e.txn_id for e in expenses])
+                skipped = _append_skip_rows(skipped, skip_rows, reason="gateway_error")
+                responses = []
         reused = _rows_by_txn(group, _idempotent_reuse_txns(responses, expenses))
         skipped = _append_skip_rows(skipped, reused, reason="idempotent_reuse")
         log.info(
