@@ -78,6 +78,51 @@ Phase 2 now adds a QuickBooks export path:
     docker compose up -d
     ```
 
+## VPS deployment + Stable REST API
+
+1. Copy the repo to the VPS and set `AIRFLOW_UID` for your user (`export AIRFLOW_UID=$(id -u)`).
+2. Seed Airflow metadata (roles, admin user, Variables/Connections) from the bundled dump:
+   ```bash
+   docker compose down -v  # only if you need a clean restore
+   docker compose up airflow-init
+   ```
+   The Postgres container automatically restores `airflow_config/airflow_meta.sql`; `airflow-init` then runs migrations and imports Variables/Connections.
+3. Start Airflow with the desired profile (local or celery):
+   ```bash
+   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml up -d --build
+   # or include other overrides (gmail/celery) as needed
+   ```
+4. API auth is preconfigured in `docker-compose.yml` (`AIRFLOW__WEBSERVER__AUTHENTICATE`, `AIRFLOW__WEBSERVER__RBAC`, `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session`). The metadata dump restores the `airflow` admin user and its Admin role permissions for API and UI access.
+5. Test the Stable REST API with Basic Auth (`airflow` / `airflow`):
+   ```bash
+   # Health
+   curl -u airflow:airflow http://<host>:8080/api/v1/health
+
+   # Trigger DAG runs with non-conflicting IDs
+   curl -u airflow:airflow -X POST http://<host>:8080/api/v1/dags/part1_ingestion/dagRuns \
+     -H 'Content-Type: application/json' \
+     -d '{"dag_run_id":"api_manual_part1_'"$(date +%s)"'","conf":{}}'
+
+   curl -u airflow:airflow -X POST http://<host>:8080/api/v1/dags/part2_qbo_export/dagRuns \
+     -H 'Content-Type: application/json' \
+     -d '{"dag_run_id":"api_manual_part2_'"$(date +%s)"'","conf":{}}'
+   ```
+   Successful calls should appear in the Airflow UI as externally triggered DAG runs; follow task logs to verify expected behavior (Phase 2 tasks will still depend on the QBO Gateway connectivity).
+
+### API run configuration (dag_run.conf)
+
+- Week resolution priority (both DAGs):  
+  1) `dag_run.conf` → `week_year` + `week_num`  
+  2) Airflow Variables `WEEK_YEAR` + `WEEK_NUM`  
+  3) `logical_date - 7 days`  
+  4) Folder hint via `try_week_from_path`
+- `part1_ingestion` optional conf fields:  
+  - `week_year`, `week_num` (override week)  
+  - `input_subdir` (joined under `INPUT_FOLDER` for CSV lookup)  
+  - `client_id`, `notify_email` (carried in resolved week_info for downstream consumers)  
+- `part2_qbo_export` optional conf fields:  
+  - `week_year`, `week_num` (override week)
+
 ---
 
 ## Repo Layout

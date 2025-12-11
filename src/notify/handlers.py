@@ -94,14 +94,22 @@ def _send_email_via_conn(conn_id: str, recipients: list[str], subject: str, html
         return False
 
 
-def send_email(subject: str, html: str, files: Optional[Sequence[str]] = None) -> None:
+def send_email(
+    subject: str,
+    html: str,
+    files: Optional[Sequence[str]] = None,
+    recipients_override: Optional[Sequence[str]] = None,
+) -> None:
     """
     Send an email from a @task Python function without creating an Operator.
     Uses conn_id from Variable SMTP_CONN_ID (default 'smtp_default')
     and recipients from NOTIFY_EMAIL_TO (or NOTIFY_TO).
     """
-    to_raw = _get_var("NOTIFY_EMAIL_TO", _get_var("NOTIFY_TO", ""))
-    recipients = _parse_recipients(to_raw)
+    if recipients_override:
+        recipients = list(recipients_override)
+    else:
+        to_raw = _get_var("NOTIFY_EMAIL_TO", _get_var("NOTIFY_TO", ""))
+        recipients = _parse_recipients(to_raw)
     if not recipients:
         log.info("[notify] Email skipped: NOTIFY_EMAIL_TO is empty")
         return
