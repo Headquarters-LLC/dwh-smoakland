@@ -212,12 +212,22 @@ def _trim_columns(df: pd.DataFrame, keep: list[str]) -> pd.DataFrame:
 
 
 def _rows_by_txn(df: pd.DataFrame, txn_ids: List[str]) -> List[dict]:
-    if df is None or df.empty:
+    if df is None or df.empty or not txn_ids:
         return []
-    mask = df["txn_id"].isin(txn_ids)
+    # Normalize to strings so int txn_ids from warehouses match string ids on models.
+    norm_ids = {_clean_str(tid) for tid in txn_ids if _clean_str(tid)}
+    if not norm_ids:
+        return []
+    txn_series = df.get("txn_id")
+    if txn_series is None:
+        return []
+    normalized = txn_series.apply(_clean_str)
+    mask = normalized.isin(norm_ids)
     if not mask.any():
         return []
-    return df.loc[mask].to_dict(orient="records")
+    rows = df.loc[mask].copy()
+    rows["txn_id"] = normalized.loc[mask].values
+    return rows.to_dict(orient="records")
 
 
 def _append_skip_rows(skipped: pd.DataFrame, rows: List[dict], reason: str) -> pd.DataFrame:
@@ -318,10 +328,11 @@ def load_categorized_transactions(
     *,
     warehouse: Optional[WarehouseBase] = None,
     source: str = "warehouse",
+    samples_base: Path | str | None = None,
 ) -> pd.DataFrame:
     src = _normalize_source(source)
     if src == "samples":
-        return _load_samples_dataframe()
+        return _load_samples_dataframe(base_path=samples_base)
     wh = warehouse or _get_warehouse()
     start = pd.to_datetime(start_date, errors="coerce").date()
     end = pd.to_datetime(end_date, errors="coerce").date()
@@ -437,12 +448,13 @@ def export_deposits(
     exporter: Optional[QBOGatewayExporter] = None,
     batch_size: int = 50,
     source: str = "warehouse",
+    samples_base: Path | str | None = None,
 ) -> dict:
     env = (environment or qbo_config.get_default_environment()).lower()
     if auto_create is None:
         auto_create = env == "sandbox"
 
-    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source, samples_base=samples_base)
     deposits, skipped = build_deposits(df)
     week_num = _infer_week_num(df)
     log.info("[qbo-export] dry_run=%s", qbo_config.is_dry_run())
@@ -491,12 +503,13 @@ def export_expenses(
     exporter: Optional[QBOGatewayExporter] = None,
     batch_size: int = 50,
     source: str = "warehouse",
+    samples_base: Path | str | None = None,
 ) -> dict:
     env = (environment or qbo_config.get_default_environment()).lower()
     if auto_create is None:
         auto_create = env == "sandbox"
 
-    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source, samples_base=samples_base)
     expenses, skipped = build_expenses(df)
     week_num = _infer_week_num(df)
     log.info("[qbo-export] dry_run=%s", qbo_config.is_dry_run())
@@ -557,12 +570,13 @@ def export_deposits_multi(
     exporter: Optional[QBOGatewayExporter] = None,
     batch_size: int = 50,
     source: str = "warehouse",
+    samples_base: Path | str | None = None,
 ) -> dict:
     env = (environment or qbo_config.get_default_environment()).lower()
     if auto_create is None:
         auto_create = env == "sandbox"
 
-    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source, samples_base=samples_base)
     week_num = _infer_week_num(df)
     skipped: pd.DataFrame = pd.DataFrame()
     if df is None or df.empty:
@@ -657,16 +671,22 @@ def export_expenses_multi(
     exporter: Optional[QBOGatewayExporter] = None,
     batch_size: int = 50,
     source: str = "warehouse",
+    samples_base: Path | str | None = None,
 ) -> dict:
     env = (environment or qbo_config.get_default_environment()).lower()
     if auto_create is None:
         auto_create = env == "sandbox"
 
-    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source)
+    df = load_categorized_transactions(week_start, week_end, warehouse=warehouse, source=source, samples_base=samples_base)
     week_num = _infer_week_num(df)
     skipped: pd.DataFrame = pd.DataFrame()
     if df is None or df.empty:
         return {"total_realme": 0, "per_realme": {}, "skipped_path": None, "week_num": week_num}
+
+    if qbo_config.is_dry_run():
+        log.info("[qbo-export] DRY RUN enabled -> skipping gateway calls for expenses (multi)")
+        skipped_path = _write_skipped_report(skipped, week_start, week_end, "expenses", {"non_negative_amount"})
+        return {"total_realme": 0, "per_realme": {}, "skipped_path": skipped_path, "week_num": week_num}
 
     working = df.copy()
     working["_realme"] = _realme_series(working)

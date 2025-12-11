@@ -206,6 +206,57 @@ class _FakeExporter:
         return [{"client_id": client_id, "count": len(expenses)}]
 
 
+def test_export_deposits_reports_idempotent_reuse_with_numeric_txn(monkeypatch):
+    from src.pipelines import qbo_export
+
+    df = pd.DataFrame(
+        [
+            {
+                "txn_id": 12345,
+                "amount": 50.0,
+                "bank_account": "BA",
+                "bank_cc_num": "1111",
+                "payee_vendor": "Client A",
+                "description": "dep",
+                "date": "2025-01-01",
+                "qbo_account": "Income",
+                "qbo_sub_account": "Sales",
+            }
+        ]
+    )
+
+    monkeypatch.setattr(qbo_export, "load_categorized_transactions", lambda *args, **kwargs: df)
+    monkeypatch.setattr(qbo_export.qbo_config, "is_dry_run", lambda: False)
+
+    captured = {}
+
+    def _fake_write(skipped, week_start, week_end, kind, exclude):
+        captured["skipped"] = skipped
+        return "skipped.csv"
+
+    monkeypatch.setattr(qbo_export, "_write_skipped_report", _fake_write)
+
+    class _IdempExporter(_FakeExporter):
+        def send_deposits(self, client_id, deposits, **kwargs):
+            super().send_deposits(client_id, deposits, **kwargs)
+            return [{"idempotent_reuse": True} for _ in deposits]
+
+    exporter = _IdempExporter()
+    result = qbo_export.export_deposits(
+        week_start="2025-01-01",
+        week_end="2025-01-07",
+        client_id="client-1",
+        exporter=exporter,
+        environment="sandbox",
+    )
+
+    assert result["skipped_path"] == "skipped.csv"
+    skipped = captured["skipped"]
+    assert not skipped.empty
+    assert skipped.iloc[0]["skip_reason"] == "idempotent_reuse"
+    assert str(skipped.iloc[0]["txn_id"]) == "12345"
+
+
 def test_export_deposits_multi_routes_by_realme(monkeypatch, caplog):
     from src.pipelines import qbo_export
 

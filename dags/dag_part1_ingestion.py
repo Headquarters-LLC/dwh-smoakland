@@ -17,8 +17,9 @@ from src.dq.checks import basic_metrics, assert_no_dup_txn_id, assert_required_c
 from src.warehouse.warehouse_duckdb import DuckDBWarehouse
 from src.transforms.gold_consolidation import compute_prev_balance, consolidate_week, reconcile_summary
 from src.notify.recon import notify_recon_failure
+from src.notify.handlers import send_email
 from transforms.resolve_categorization import categorize_week
-from src.utils.week_resolution import resolve_week_info
+from src.utils.week_resolution import resolve_week_info, resolve_input_mode, cleanup_ephemeral_folder
 
 
 def _is_truthy(val: str | None) -> bool:
@@ -60,11 +61,20 @@ with DAG(
             "INPUT_FOLDER",
             default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
         )
-        input_subdir = conf.get("input_subdir")
-        input_folder = os.path.join(base_input_folder, input_subdir) if input_subdir else base_input_folder
         logical_date = ctx.get("logical_date")
         logical_date_str = logical_date.isoformat() if logical_date else ctx.get("ds")
-        return {"input_folder": input_folder, "conf": conf, "logical_date": logical_date_str}
+        run_id = ctx.get("run_id")
+        input_mode = resolve_input_mode(conf, base_input_folder)
+        input_mode.update(
+            {
+                "conf": conf,
+                "logical_date": logical_date_str,
+                "run_id": run_id,
+                "notify_email": conf.get("notify_email"),
+                "client_id": conf.get("client_id"),
+            }
+        )
+        return input_mode
 
     @task()
     def resolve_week(run_params: dict) -> dict:
@@ -75,6 +85,8 @@ with DAG(
             "client_id": conf.get("client_id"),
             "notify_email": conf.get("notify_email"),
             "input_folder": input_folder,
+            "gateway_mode": run_params.get("gateway_mode"),
+            "input_subdir": run_params.get("input_subdir"),
         }
         return resolve_week_info(
             logical_date=logical_date,
@@ -296,6 +308,7 @@ with DAG(
             paths={"fail_csv": fail_path, "summary_csv": summary},
             airflow_ctx=ctx,
             week_info=week_info,
+            notify_email=week_info.get("notify_email"),
         )
 
     @task()
@@ -358,10 +371,51 @@ with DAG(
 
         return f"gold.categorized_bank_cc upserted for {week_start}..{week_end}"
 
+    @task()
+    def notify_success(run_params: dict, week_info: dict) -> str:
+        conf_email = run_params.get("notify_email") or (run_params.get("conf") or {}).get("notify_email")
+        if not conf_email:
+            return "notify_email not provided; skipping success email"
+
+        wh = DuckDBWarehouse(db_path=os.getenv("DUCKDB_PATH", "/opt/airflow/logs/local.duckdb"))
+        week_start = pd.to_datetime(week_info["week_start"]).date()
+        week_end = pd.to_datetime(week_info["week_end"]).date()
+        df = wh.fetch_categorized_between(week_start, week_end)
+
+        base_dir = run_params["input_folder"] if run_params.get("gateway_mode") else os.path.join(
+            "/opt/airflow/logs/reports/runs", str(run_params.get("run_id") or "manual")
+        )
+        artifact_dir = os.path.join(base_dir, "outputs")
+        os.makedirs(artifact_dir, exist_ok=True)
+        csv_path = os.path.join(artifact_dir, f"categorized_{week_start}_{week_end}.csv")
+        df.to_csv(csv_path, index=False)
+
+        subject = f"[OK] Ingestion succeeded {week_start} -> {week_end}"
+        html = (
+            "<p>The ingestion and categorization pipeline completed successfully.</p>"
+            f"<p>Week: {week_start} -> {week_end}</p>"
+        )
+        send_email(subject=subject, html=html, files=[csv_path], recipients_override=[conf_email])
+        return csv_path
+
+    @task(trigger_rule=TriggerRule.ALL_DONE)
+    def cleanup_gateway_input(run_params: dict) -> str:
+        if not run_params.get("gateway_mode"):
+            return "skip cleanup (manual mode)"
+        removed = cleanup_ephemeral_folder(run_params.get("shared_input_folder"), run_params.get("input_subdir"))
+        return removed or "cleanup noop"
+
 
     # wiring:
     week_table = build_week_gold(week_info)
     result = reconcile_and_write(week_info, week_table)
     categorized = categorize_and_write(week_info, week_table)
     rows >> week_table >> result >> categorized
-    result >> notify_recon(week_info)
+    recon_notify = notify_recon(week_info)
+    result >> recon_notify
+
+    success_email = notify_success(run_params, week_info)
+    categorized >> success_email
+
+    cleanup = cleanup_gateway_input(run_params)
+    [categorized, recon_notify] >> cleanup

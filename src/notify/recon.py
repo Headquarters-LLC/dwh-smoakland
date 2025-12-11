@@ -24,6 +24,7 @@ def notify_recon_failure(
     paths: Dict[str, str] | None = None,     # {"fail_csv": "...", "summary_csv": "..."}
     airflow_ctx: Dict[str, Any] | None = None,
     week_info: Dict[str, Any] | None = None,
+    notify_email: str | None = None,
     **_: Any,  # tolerate future kwargs without breaking
 ) -> None:
     """
@@ -67,7 +68,8 @@ def notify_recon_failure(
     <p>Check the attached CSV for combinations with differences greater than the tolerance.</p>
     """
     files = [f for f in [fail_csv, summary_csv] if f and f != "N/A"]
-    send_email(subject=subject, html=html_body, files=files)
+    recipients = [notify_email] if notify_email else None
+    send_email(subject=subject, html=html_body, files=files, recipients_override=recipients)
 
     # Slack
     slack_msg = (
