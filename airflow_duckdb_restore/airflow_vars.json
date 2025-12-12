@@ -1,0 +1,13 @@
+{
+    "BQ_DATASET": "smoakland",
+    "BQ_TABLE": "bank_raw",
+    "DUCKDB_PATH": "/opt/airflow/logs/local.duckdb",
+    "FORCE_RECON_FAIL": false,
+    "INPUT_FOLDER": "/opt/airflow/data_samples/inbox",
+    "NOTIFY_EMAIL_TO": "jorgeaveraf@gmail.com",
+    "NOTIFY_SLACK_CONN_ID": "slack_default",
+    "SLACK_WEBHOOK": "https://hooks.slack.com/triggers/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",
+    "SMTP_CONN_ID": "smtp_gmail_465",
+    "WEEK_NUM": "",
+    "WEEK_YEAR": 2025
+}

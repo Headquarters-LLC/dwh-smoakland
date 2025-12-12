@@ -1,4 +1,4 @@
-# Smoakland Airflow Starter
+# dwh-smoakland
 
 Local, Docker-Compose–based Airflow starter for the Smoakland automation project.
 This repo lets you develop and test Phase 1 ingestion and categorization end-to-end locally, with clean modular separation between:
@@ -10,6 +10,13 @@ This repo lets you develop and test Phase 1 ingestion and categorization end-to-
 - Warehouse adapters → src/warehouse/
 
 Once credentials are available, you can swap local adapters (Drive/DuckDB) for real ones (Google Drive, BigQuery, QuickBooks).
+
+Phase 2 now adds a QuickBooks export path:
+- Orchestration → `dags/dag_part2_qbo_export.py` (TaskFlow)
+- Pipeline → `src/pipelines/qbo_export.py`
+- Domain layer → `src/accounting/` (models, ports, services)
+- Integration adapter → `src/integrations/qbo_gateway/` (config, mappers, HTTP client + exporter)
+- Exports are built from the categorized warehouse tables and sent to the QBO Gateway Service with idempotent POSTs.
 
 ---
 
@@ -52,12 +59,69 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
    docker compose up -d --build
    ```
    Local:
-   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml up -d
+   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.gmail.yml up -d
 
 5. **Access Airflow UI**:
    - URL: [http://localhost:8080](http://localhost:8080)  
    - User: `airflow`  
    - Password: `airflow`
+
+### Restoring preconfigured Airflow data
+
+- All exported **Variables**, **Connections**, and a Postgres **metadata dump** live in `airflow_config/`.
+- `docker compose up airflow-init` now imports `airflow_config/airflow_vars.json` and `airflow_config/airflow_conns.json` automatically after migrations/user creation.
+- The Postgres container mounts `airflow_config/airflow_meta.sql` to `/docker-entrypoint-initdb.d`, so the dump seeds a fresh metadata DB the next time the volume is empty.  
+  - To force a restore, drop the existing volume and re-run init:
+    ```bash
+    docker compose down -v   # removes postgres-db-volume
+    docker compose up airflow-init
+    docker compose up -d
+    ```
+
+## VPS deployment + Stable REST API
+
+1. Copy the repo to the VPS and set `AIRFLOW_UID` for your user (`export AIRFLOW_UID=$(id -u)`).
+2. Seed Airflow metadata (roles, admin user, Variables/Connections) from the bundled dump:
+   ```bash
+   docker compose down -v  # only if you need a clean restore
+   docker compose up airflow-init
+   ```
+   The Postgres container automatically restores `airflow_config/airflow_meta.sql`; `airflow-init` then runs migrations and imports Variables/Connections.
+3. Start Airflow with the desired profile (local or celery):
+   ```bash
+   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml up -d --build
+   # or include other overrides (gmail/celery) as needed
+   ```
+4. API auth is preconfigured in `docker-compose.yml` (`AIRFLOW__WEBSERVER__AUTHENTICATE`, `AIRFLOW__WEBSERVER__RBAC`, `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session`). The metadata dump restores the `airflow` admin user and its Admin role permissions for API and UI access.
+5. Test the Stable REST API with Basic Auth (`airflow` / `airflow`):
+   ```bash
+   # Health
+   curl -u airflow:airflow http://<host>:8080/api/v1/health
+
+   # Trigger DAG runs with non-conflicting IDs
+   curl -u airflow:airflow -X POST http://<host>:8080/api/v1/dags/part1_ingestion/dagRuns \
+     -H 'Content-Type: application/json' \
+     -d '{"dag_run_id":"api_manual_part1_'"$(date +%s)"'","conf":{}}'
+
+   curl -u airflow:airflow -X POST http://<host>:8080/api/v1/dags/part2_qbo_export/dagRuns \
+     -H 'Content-Type: application/json' \
+     -d '{"dag_run_id":"api_manual_part2_'"$(date +%s)"'","conf":{}}'
+   ```
+   Successful calls should appear in the Airflow UI as externally triggered DAG runs; follow task logs to verify expected behavior (Phase 2 tasks will still depend on the QBO Gateway connectivity).
+
+### API run configuration (dag_run.conf)
+
+- Week resolution priority (both DAGs):  
+  1) `dag_run.conf` → `week_year` + `week_num`  
+  2) Airflow Variables `WEEK_YEAR` + `WEEK_NUM`  
+  3) `logical_date - 7 days`  
+  4) Folder hint via `try_week_from_path`
+- `part1_ingestion` optional conf fields:  
+  - `week_year`, `week_num` (override week)  
+  - `input_subdir` (joined under `INPUT_FOLDER` for CSV lookup)  
+  - `client_id`, `notify_email` (carried in resolved week_info for downstream consumers)  
+- `part2_qbo_export` optional conf fields:  
+  - `week_year`, `week_num` (override week)
 
 ---
 
@@ -117,10 +181,21 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
 
 ---
 
+## Categorization Rulebooks & Overrides
+
+- Payee/vendor resolution is driven by the regex rulebook at `src/rulebook/payee_vendor.py`; rule tags follow `<rulebook>@<version>#<rule_id>`.
+- Non-text logic is handled after regex: `categorize_week` calls `postprocess` from `src/rulebook/payee_vendor.py` (wired in `src/transforms/resolve_categorization.py`).
+- Current override: if `description` contains the word `CHECK` (case-insensitive, word boundary) and `amount` < 0, then `payee_vendor` is set to `PAYNW` with rule tag `payee_vendor@2025.11.21#post-check-amount` and source `postprocess`.
+- Future numeric/cross-field tweaks should follow the same pattern: keep regex-only rules in `_RULES`, and place numeric or multi-field conditions in the rulebook’s `postprocess`.
+- Gold output (`gold.categorized_bank_cc`) now derives `week_label` (`Week {week_num}`); `bank_account_cc` comes from a centralized `bank_cc_num` → account mapping (falling back to `bank_account` + `bank_cc_num`); `realme_client_name` is derived from `entity_qbo`; and `description` is normalized by collapsing repeated spaces.
+
+---
+
 ## Environment & Config
 
 - Copy `.env.example` → `.env` for **local-only settings**.  
   ⚠️ **Never commit secrets**.
+- The `.env` file provides notification-specific values (email list + Slack webhook) consumed by docker-compose overrides like `docker-compose.mailhog.yml`.
 
 - In production: configure **Airflow Connections & Variables** instead of using `.env`.
 
@@ -162,6 +237,47 @@ Once credentials are available, you can swap local adapters (Drive/DuckDB) for r
   - swap Docker Compose → VPS or K8s  
   - or use managed Airflow (Cloud Composer, Astronomer).
 
+### Phase 2: QBO Export
+
+- DAG `part2_qbo_export` reads the already categorized warehouse data (`gold.categorized_bank_cc`) for the requested week and exports it to QuickBooks through the QBO Gateway Service.
+- Window resolution mirrors Phase 1 (Variables `WEEK_YEAR`/`WEEK_NUM`, folder hint, or `logical_date - 7d` fallback).
+- Annex A/B mappings are applied end-to-end (domain → payload), including expense class support and the current interim entity_type default for deposits.
+- Rows with “unknown” critical fields (vendor/account/bank, etc.) are skipped with a `[qbo-export]` warning to avoid sending bad payloads.
+- DAG parameters (Airflow Variables/env):
+  - `QBO_CLIENT_ID` (required): UUID/realm used in `/qbo/{client_id}/...`.
+  - `QBO_REALME_CLIENTS` (optional): JSON object mapping `realme_client_name` (from `gold.categorized_bank_cc`) to gateway `client_id` UUIDs, e.g. `{"DeliverMD": "477751f2-...", "TPH786": "c19f83f1-..."}`. When present, exports run once and route each group to its matching realm; when missing/invalid, the DAG falls back to single-client mode using `QBO_CLIENT_ID`.
+  - `QBO_ENVIRONMENT` (`sandbox` or `production`, default `sandbox`).
+  - `QBO_AUTO_CREATE` (true/false): only used for sandbox; forced off for production.
+  - `QBO_GATEWAY_BASE_URL` (e.g., `http://localhost:8000` or `http://qbo-gateway-api:8000`).
+  - `QBO_GATEWAY_API_KEY` (X-API-Key header).
+  - Optional: `QBO_GATEWAY_TIMEOUT`, `QBO_GATEWAY_RETRY_ATTEMPTS`, `QBO_GATEWAY_RETRY_BACKOFF`.
+- Trigger from Airflow UI: enable `part2_qbo_export`, set the Variables above, and run. The DAG will:
+  1) Resolve the target week.
+  2) Fetch categorized rows from DuckDB/BigQuery once for the range.
+  3) Map them into accounting models (Deposits/Expenses), grouping by `realme_client_name` when the multi-realm map is provided so each set goes to its gateway `client_id`.
+  4) POST to `/qbo/{client_id}/deposits` and `/expenses` with `X-API-Key`, `Idempotency-Key`, and `environment/auto_create` query params.
+  5) Rows with missing `realme_client_name` or unmapped values are skipped and reported in the skipped CSV alongside other validation skips.
+
+#### Alternative Input Source (samples mode)
+
+- Purpose: run Phase 2 without hitting the warehouse by reading sample CSVs from `data_samples/qbo/` with the same schema expected by the exporters.
+- Airflow Variable: `QBO_EXPORT_SOURCE` = `warehouse` (default/fallback) or `samples`. Any missing/invalid value falls back to `warehouse`.
+- Warehouse mode (default): uses `gold.categorized_bank_cc` via `fetch_categorized_between`.
+- Samples mode: loads all CSVs under `data_samples/qbo/`, normalizes bank/account fields, and feeds the same deposit/expense builders (unknown rows are still skipped with warnings).
+- Switching modes does not affect Phase 1 ingestion or other `data_samples` folders.
+
+### Phase 2 Architecture Notes
+
+- `src/pipelines/qbo_export.py` orchestrates the export workflow and only depends on the warehouse adapter + accounting services.
+- `src/accounting/models.py` defines Pydantic domain models (`Deposit`, `Expense`, etc.) with built-in idempotency fingerprints; `services.py` handles batching and delegates to an exporter interface defined in `ports.py`.
+- `src/integrations/qbo_gateway/` provides the concrete exporter:
+  - `config.py` reads Airflow Variables/env for base URL, API key, environment, timeouts, retries.
+  - `mappers.py` converts domain models into QBO Gateway payloads (Annex A/B style: deposit_to_account/doc_number/lines/private_note and expense vendor/bank_account/lines).
+  - `client.py` wraps HTTP calls with headers + retries.
+  - `exporter.py` implements the `IAccountingExporter` interface and POSTs to the Gateway with per-entity `Idempotency-Key`.
+- Data dependencies: exports read from `gold.categorized_bank_cc`, reusing the categorization outputs produced by Phase 1.
+- Local Gateway: point `QBO_GATEWAY_BASE_URL` to your running QBO Gateway (e.g., docker-compose from its repo) and keep `QBO_ENVIRONMENT=sandbox` with `QBO_AUTO_CREATE=true` for smoke tests.
+
 ---
 
 ## Credentials
@@ -177,3 +293,27 @@ For local development, you can place placeholder values in `.env` and replace th
 ## License
 
 Internal HQ use. Not for redistribution outside Smoakland project.
+
+---
+
+## Email (SMTP)
+
+- For local development, prefer MailHog (no auth):
+  - Start with: `docker compose -f docker-compose.yml -f docker-compose.mailhog.yml up -d`
+  - Use connection `smtp_default` (auto-created) and view emails at `http://localhost:8025`.
+
+- For Gmail (app password) on port 465/SSL:
+  1) Start services with SSL forced and STARTTLS disabled:
+     - `docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.gmail.yml up -d`
+  2) Create the Airflow connection (run inside the webserver container, replace the app password):
+     - `airflow connections add --conn-uri "smtps://USER%40DOMAIN:APP_PASSWORD@smtp.gmail.com:465?from_email=USER%40DOMAIN&timeout=30&smtp_ssl=true" smtp_gmail_465`
+  3) Test from a shell in the container:
+     - `python - <<'PY'
+from airflow.utils.email import send_email
+send_email(['you@example.com'], 'Gmail smoke test', '<b>Hello</b>', conn_id='smtp_gmail_465')
+print('sent')
+PY`
+
+Notes:
+- Do not commit secrets. Rotate the Gmail app password periodically.
+- If your network blocks 465, try port 587 with STARTTLS (`starttls=true`) and remove `docker-compose.gmail.yml` from the stack.

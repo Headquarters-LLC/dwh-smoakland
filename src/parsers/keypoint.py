@@ -33,7 +33,7 @@ class KeyPointParser(Parser):
 
         date_c = self._col(df, ["Date"])
         desc_c = self._col(df, ["Description"])
-        ext_c  = self._col(df, ["Extended Description", "Memo"])  # por si algún export lo trae
+        ext_c  = self._col(df, ["Extended Description", "Memo"])  # por si algun export lo trae
         amt_c  = self._col(df, ["Amount"])
         bal_c  = self._col(df, ["Balance"])
         tid_c  = self._col(df, ["Transaction ID", "ID"])

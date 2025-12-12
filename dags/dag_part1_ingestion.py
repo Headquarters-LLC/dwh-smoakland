@@ -14,16 +14,18 @@ from airflow.utils.trigger_rule import TriggerRule
 from src.io.storage_local import LocalStorage
 from src.parsers import detect_source, get_parser
 from src.dq.checks import basic_metrics, assert_no_dup_txn_id, assert_required_columns
-from src.transforms.week_detect import (
-    detect_week_bounds,
-    week_bounds_from_weeknum,
-    try_week_from_path,
-)
 from src.warehouse.warehouse_duckdb import DuckDBWarehouse
 from src.transforms.gold_consolidation import compute_prev_balance, consolidate_week, reconcile_summary
 from src.notify.recon import notify_recon_failure
+from src.notify.handlers import send_email
 from transforms.resolve_categorization import categorize_week
+from src.utils.week_resolution import resolve_week_info, resolve_input_mode, cleanup_ephemeral_folder
 
+
+def _is_truthy(val: str | None) -> bool:
+    if val is None:
+        return False
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 DEFAULT_ARGS = {"owner": "smoakland", "retries": 0}
@@ -34,19 +36,16 @@ with DAG(
     schedule_interval=None,          # Manual or via API
     catchup=False,
     default_args=DEFAULT_ARGS,
-    tags=["smoakland", "part1"],
+    tags=["ETL", "part1"],
 ) as dag:
 
     @task()
-    def list_csvs() -> list[str]:
+    def list_csvs(run_params: dict) -> list[str]:
         """
         List CSVs from the configured input folder (local dev).
-        This remains decoupled: for GDrive you’ll swap the adapter.
+        This remains decoupled: for GDrive you'll swap the adapter.
         """
-        input_folder = Variable.get(
-            "INPUT_FOLDER",
-            default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
-        )
+        input_folder = run_params["input_folder"]
         storage = LocalStorage(base_path=input_folder)
         files = [f for f in storage.list_files(extension=".csv")]
         if not files:
@@ -54,38 +53,52 @@ with DAG(
         return files
 
     @task()
-    def resolve_week(input_folder: str, logical_date: str) -> dict:
-        """
-        Priority:
-          1) Airflow Variables: WEEK_YEAR + WEEK_NUM
-          2) Folder name: .../week_37, .../week37-2025
-          3) Fallback: prior week from (logical_date - 7d)  ← semana vencida
-        Returns ISO strings and a 'source' hint.
-        """
-        # 1) Variables
-        week_num = Variable.get("WEEK_NUM", default_var=None)
-        week_year = Variable.get("WEEK_YEAR", default_var=None)
-        if week_num:
-            y = int(week_year) if week_year else pd.to_datetime(logical_date).year
-            start, end = week_bounds_from_weeknum(y, int(week_num))
-            return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "variables"}
+    def build_run_params() -> dict:
+        ctx = get_current_context()
+        dag_run = ctx.get("dag_run")
+        conf = dag_run.conf or {} if dag_run else {}
+        base_input_folder = Variable.get(
+            "INPUT_FOLDER",
+            default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
+        )
+        logical_date = ctx.get("logical_date")
+        logical_date_str = logical_date.isoformat() if logical_date else ctx.get("ds")
+        run_id = ctx.get("run_id")
+        input_mode = resolve_input_mode(conf, base_input_folder)
+        input_mode.update(
+            {
+                "conf": conf,
+                "logical_date": logical_date_str,
+                "run_id": run_id,
+                "notify_email": conf.get("notify_email"),
+                "client_id": conf.get("client_id"),
+            }
+        )
+        return input_mode
 
-        # 2) Folder name
-        default_dt = pd.to_datetime(logical_date).to_pydatetime()
-        wb = try_week_from_path(input_folder, default_dt)
-        if wb:
-            start, end = wb
-            return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "folder_name"}
-
-        # 3) Fallback: prior week from (logical_date - 7d)
-        prior = pd.to_datetime(logical_date) - pd.Timedelta(days=7)
-        start, end = detect_week_bounds(prior.to_pydatetime())
-        return {"week_start": start.isoformat(), "week_end": end.isoformat(), "source": "logical_date_minus_7"}
+    @task()
+    def resolve_week(run_params: dict) -> dict:
+        conf = run_params.get("conf", {})
+        input_folder = run_params["input_folder"]
+        logical_date = run_params["logical_date"]
+        extra = {
+            "client_id": conf.get("client_id"),
+            "notify_email": conf.get("notify_email"),
+            "input_folder": input_folder,
+            "gateway_mode": run_params.get("gateway_mode"),
+            "input_subdir": run_params.get("input_subdir"),
+        }
+        return resolve_week_info(
+            logical_date=logical_date,
+            input_folder=input_folder,
+            dag_run_conf=conf,
+            extra=extra,
+        )
 
     @task()
     def parse_one(file_path: str) -> str:
         """
-        Detect source → parse → standardize to core schema.
+        Detect source -> parse -> standardize to core schema.
         Writes a parquet in logs/staging and returns its path.
         """
         df_raw = pd.read_csv(file_path)
@@ -138,11 +151,35 @@ with DAG(
         ctx = get_current_context()
         df["ingest_batch_id"] = ctx["run_id"]
         df["ingest_ts"] = pd.Timestamp(ctx["ts"])
+        if "extended_description" in df.columns:
+            # Keep presentation-friendly blanks rather than NaN/None
+            df["extended_description"] = df["extended_description"].fillna("")
+        else:
+            df["extended_description"] = ""
 
         # Filter to the week (in case of dirty data)
         mask = (pd.to_datetime(df["date"], errors="coerce") >= week_start) & \
             (pd.to_datetime(df["date"], errors="coerce") <= week_end)
         df = df.loc[mask].reset_index(drop=True)
+
+        # Deduplicate natural keys to avoid duplicate rows across re-ingests
+        dedupe_cols = [
+            "bank_account",
+            "bank_cc_num",
+            "subentity",
+            "date",
+            "amount",
+            "description",
+            "extended_description",
+        ]
+        existing = [c for c in dedupe_cols if c in df.columns]
+        before = len(df)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.date
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
+        df = df.drop_duplicates(subset=existing, keep="first").reset_index(drop=True)
+        after = len(df)
+        if before != after:
+            print(f"[combine] deduped rows: {before}->{after} (removed {before-after})")
 
         m = basic_metrics(df)
         print(f"Combined metrics: {m} | week_source={week_info.get('source')}")
@@ -164,14 +201,11 @@ with DAG(
         return f"rows={len(df)} -> core_transactions"
 
     # wiring (with task mapping)
-    input_folder = Variable.get(
-        "INPUT_FOLDER",
-        default_var=os.getenv("AIRFLOW_VAR_INPUT_FOLDER", "./data_samples/inbox"),
-    )
     # logical_date via macro; ds = YYYY-MM-DD (UTC midnight)
-    week_info = resolve_week(input_folder=input_folder, logical_date="{{ ds }}")
+    run_params = build_run_params()
+    week_info = resolve_week(run_params)
 
-    files = list_csvs()
+    files = list_csvs(run_params)
     parsed = parse_one.expand(file_path=files)                 # fan-out per file
     combined = combine_enrich_check(parsed, week_info)         # fan-in + week enrich
     rows = write_core_transactions(combined)
@@ -198,6 +232,12 @@ with DAG(
         wh = DuckDBWarehouse(db_path=os.getenv("DUCKDB_PATH","/opt/airflow/logs/local.duckdb"))
         week_start = pd.to_datetime(week_info["week_start"]).date()
         week_end   = pd.to_datetime(week_info["week_end"]).date()
+        force_recon_fail = _is_truthy(
+            Variable.get(
+                "FORCE_RECON_FAIL",
+                default_var=os.getenv("AIRFLOW_VAR_FORCE_RECON_FAIL", "false"),
+            )
+        )
 
         gold_week = pd.read_parquet(week_parquet)
         df_prev_all = wh.fetch_core_before(week_start)
@@ -215,6 +255,17 @@ with DAG(
 
         # Fail-fast if there are mismatches
         bad = summary[summary["verdict"] == "MISMATCH"]
+        if force_recon_fail:
+            print("[reconcile] FORCE_RECON_FAIL enabled -> forcing mismatch path for notification test")
+            if summary.empty:
+                forced_row = {c: None for c in summary.columns}
+                forced_row.update({"verdict": "FORCED_FAIL"})
+                summary = pd.concat([summary, pd.DataFrame([forced_row])], ignore_index=True)
+            else:
+                summary = summary.copy()
+                summary["verdict"] = "FORCED_FAIL"
+            summary.to_csv(summary_path, index=False)
+            bad = summary
         if not bad.empty:
             fail_path = os.path.join(report_dir, f"recon_fail_{week_start}_{week_end}.csv")
             bad.to_csv(fail_path, index=False)
@@ -241,7 +292,7 @@ with DAG(
         return f"gold.bank_consolidation upserted for {week_start}..{week_end}"
     
     @task(trigger_rule=TriggerRule.ONE_FAILED)
-    def notify_recon():
+    def notify_recon(week_info: dict):
         ti = get_current_context()["ti"]
         ctx = get_current_context()
 
@@ -256,6 +307,8 @@ with DAG(
             ok=False,
             paths={"fail_csv": fail_path, "summary_csv": summary},
             airflow_ctx=ctx,
+            week_info=week_info,
+            notify_email=week_info.get("notify_email"),
         )
 
     @task()
@@ -300,7 +353,7 @@ with DAG(
                 continue
 
             # Group by description fields to identify new rule candidates
-            # Include payee_vendor when available — it often improves rule context
+            # Include payee_vendor when available -- it often improves rule context
             group_cols = [c for c in ["payee_vendor", "description", "extended_description"] if c in unk.columns]
 
             out_df = (
@@ -318,10 +371,51 @@ with DAG(
 
         return f"gold.categorized_bank_cc upserted for {week_start}..{week_end}"
 
+    @task()
+    def notify_success(run_params: dict, week_info: dict) -> str:
+        conf_email = run_params.get("notify_email") or (run_params.get("conf") or {}).get("notify_email")
+        if not conf_email:
+            return "notify_email not provided; skipping success email"
+
+        wh = DuckDBWarehouse(db_path=os.getenv("DUCKDB_PATH", "/opt/airflow/logs/local.duckdb"))
+        week_start = pd.to_datetime(week_info["week_start"]).date()
+        week_end = pd.to_datetime(week_info["week_end"]).date()
+        df = wh.fetch_categorized_between(week_start, week_end)
+
+        base_dir = run_params["input_folder"] if run_params.get("gateway_mode") else os.path.join(
+            "/opt/airflow/logs/reports/runs", str(run_params.get("run_id") or "manual")
+        )
+        artifact_dir = os.path.join(base_dir, "outputs")
+        os.makedirs(artifact_dir, exist_ok=True)
+        csv_path = os.path.join(artifact_dir, f"categorized_{week_start}_{week_end}.csv")
+        df.to_csv(csv_path, index=False)
+
+        subject = f"[OK] Ingestion succeeded {week_start} -> {week_end}"
+        html = (
+            "<p>The ingestion and categorization pipeline completed successfully.</p>"
+            f"<p>Week: {week_start} -> {week_end}</p>"
+        )
+        send_email(subject=subject, html=html, files=[csv_path], recipients_override=[conf_email])
+        return csv_path
+
+    @task(trigger_rule=TriggerRule.ALL_DONE)
+    def cleanup_gateway_input(run_params: dict) -> str:
+        if not run_params.get("gateway_mode"):
+            return "skip cleanup (manual mode)"
+        removed = cleanup_ephemeral_folder(run_params.get("shared_input_folder"), run_params.get("input_subdir"))
+        return removed or "cleanup noop"
+
 
     # wiring:
     week_table = build_week_gold(week_info)
     result = reconcile_and_write(week_info, week_table)
     categorized = categorize_and_write(week_info, week_table)
     rows >> week_table >> result >> categorized
-    result >> notify_recon()
+    recon_notify = notify_recon(week_info)
+    result >> recon_notify
+
+    success_email = notify_success(run_params, week_info)
+    categorized >> success_email
+
+    cleanup = cleanup_gateway_input(run_params)
+    [categorized, recon_notify] >> cleanup

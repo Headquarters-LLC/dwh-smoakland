@@ -21,7 +21,7 @@ def _infer_from_filename(path: str) -> Dict[str, str]:
     if "8267" in name:
         return {"bank_account": "TPH", "bank_cc_num": "8267", "invert": False}
     if "71000" in name:
-        return {"bank_account": "DMD", "bank_cc_num": "71000", "invert": True}  # special case
+        return {"bank_account": "DMD", "bank_cc_num": "71000", "invert": True}
     if "7639" in name:
         return {"bank_account": "TPH", "bank_cc_num": "7639", "invert": False}
 
@@ -70,20 +70,15 @@ class CreditCardParser(Parser):
         n = len(df)
 
         # ----- Normalize amount --------------------------------------------
-        if bank_cc_num == "7639" and (debit_c or credit_c):
-            # Force the rule regardless of an Amount column
-            debit_s  = utils.clean_amount_series(df[debit_c])  if debit_c  else pd.Series([0]*n)
-            credit_s = utils.clean_amount_series(df[credit_c]) if credit_c else pd.Series([0]*n)
-            amount_s = credit_s.fillna(0) - debit_s.fillna(0)  # credit positive, debit negative
+        # Uniform rule for all cards:
+        if amt_c:
+            amount_s = utils.clean_amount_series(df[amt_c])
         else:
-            if amt_c:
-                amount_s = utils.clean_amount_series(df[amt_c])
-            else:
-                debit_s  = utils.clean_amount_series(df[debit_c])  if debit_c  else pd.Series([0]*n)
-                credit_s = utils.clean_amount_series(df[credit_c]) if credit_c else pd.Series([0]*n)
-                amount_s = credit_s.fillna(0) - debit_s.fillna(0)
+            debit_s  = utils.clean_amount_series(df[debit_c]) if debit_c  else pd.Series([0]*n)
+            credit_s = utils.clean_amount_series(df[credit_c]) if credit_c else pd.Series([0]*n)
+            amount_s = credit_s.abs().fillna(0) - debit_s.abs().fillna(0)
 
-        # Special: CC 71000 comes inverted → flip signs
+        # Special: cards that come inverted (71000 per infer) -> flip signs
         if invert_signs and amount_s is not None:
             amount_s = -amount_s
 

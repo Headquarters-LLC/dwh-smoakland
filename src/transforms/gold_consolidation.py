@@ -6,8 +6,8 @@ KEY = ["bank_account", "subentity", "bank_cc_num"]
 
 def compute_prev_balance(df_before: pd.DataFrame) -> pd.DataFrame:
     """
-    Input: core.transactions < week_start (puede venir vacío).
-    Output: dataframe con KEY + prev_balance (último balance no-nulo por llave).
+    Input: core.transactions < week_start (puede venir vacio).
+    Output: dataframe con KEY + prev_balance (ultimo balance no-nulo por llave).
     """
     if df_before.empty:
         return pd.DataFrame(columns=KEY + ["prev_balance"])
@@ -35,6 +35,10 @@ def consolidate_week(df_week_core: pd.DataFrame,
         ])
 
     wk = df_week_core.copy()
+    if "extended_description" in wk.columns:
+        wk["extended_description"] = wk["extended_description"].fillna("")
+    else:
+        wk["extended_description"] = ""
     wk["amount"] = pd.to_numeric(wk["amount"], errors="coerce").round(4)
     wk["date"]   = pd.to_datetime(wk["date"], errors="coerce").dt.date
 
@@ -71,7 +75,16 @@ def reconcile_summary(df_week_gold: pd.DataFrame,
     if df_week_gold.empty:
         return pd.DataFrame(columns=[*KEY, "end_prev", "end_curr", "sum_amt", "delta_bal", "diff", "verdict"])
 
-    end_prev = prev_balance.set_index(KEY)["prev_balance"].rename("end_prev")
+    # Only reconcile keys that actually appear in the current week's data.
+    keys_in_week = pd.MultiIndex.from_frame(
+        df_week_gold[KEY].drop_duplicates(), names=KEY
+    )
+
+    end_prev = (
+        prev_balance.set_index(KEY)["prev_balance"]
+        .rename("end_prev")
+        .reindex(keys_in_week, fill_value=0.0)
+    )
 
     last_bal = (
         df_week_gold
@@ -79,6 +92,7 @@ def reconcile_summary(df_week_gold: pd.DataFrame,
         .groupby(KEY, dropna=False)["balance"]
         .last()
         .rename("end_curr")
+        .reindex(keys_in_week, fill_value=0.0)
     )
 
     sum_amt = (
@@ -86,9 +100,13 @@ def reconcile_summary(df_week_gold: pd.DataFrame,
         .groupby(KEY, dropna=False)["amount"]
         .sum()
         .rename("sum_amt")
+        .reindex(keys_in_week, fill_value=0.0)
     )
 
-    s = pd.concat([end_prev, last_bal, sum_amt], axis=1).fillna(0.0).reset_index()
+    def _num(series: pd.Series) -> pd.Series:
+        return pd.to_numeric(series, errors="coerce").fillna(0.0).astype(float)
+
+    s = pd.concat([_num(end_prev), _num(last_bal), _num(sum_amt)], axis=1).reset_index()
     s["delta_bal"] = (s["end_curr"] - s["end_prev"]).round(4)
     s["sum_amt"]   = s["sum_amt"].round(4)
     s["diff"]      = (s["delta_bal"] - s["sum_amt"]).abs().round(4)

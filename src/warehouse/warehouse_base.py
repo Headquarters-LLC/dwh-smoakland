@@ -15,3 +15,9 @@ class WarehouseBase(ABC):
     def upsert_gold_consolidation_week(self, df: pd.DataFrame, week_start, week_end) -> None: ...
     @abstractmethod
     def upsert_gold_categorized_week(self, df: pd.DataFrame, week_start, week_end) -> None: ...
+
+    def fetch_categorized_between(self, start_date, end_date) -> pd.DataFrame:
+        """
+        Optional helper for downstream exports. Implementations can override.
+        """
+        raise NotImplementedError

@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Iterable, Tuple, List, Dict
 import re
+import pandas as pd
 
 """
 cf_account rulebook
@@ -15,7 +16,7 @@ cf_account rulebook
 """
 
 RULEBOOK_NAME = "cf_account"
-RULEBOOK_VERSION = "2025.10.03"   # <-- update when rules change
+RULEBOOK_VERSION = "2025.12.13"   # <-- update when rules change
 UNKNOWN = "UNKNOWN"
 
 # ---------------------------------------------------------------------------
@@ -23,521 +24,72 @@ UNKNOWN = "UNKNOWN"
 # Optionally provide a human-friendly id; if omitted the ordinal index is used.
 # ---------------------------------------------------------------------------
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
-    (re.compile(r'(?i)\bCHARGES\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bX0435\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bX0586\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bTHANK\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bYOU\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bCHEVRON\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCHASE\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bCRD\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bSHELL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bTESTING\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bLAB\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bSMOAKLANDSAC\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bBELCOSTA\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bARCO\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bADOBE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bARMOR\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bWASTE\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bINTUIT\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bQBOOKS\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bLICENSES\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bPERMITS\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bCINTAS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bMORGAN\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bPROVOST\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bDISPOSAL\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bKLAVIYO\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSOUTHWES\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bEZPAY\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bCOMCAST\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bDOORDASH\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bDINING\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bBLAZE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bMONTHLY\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bGHOST\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\b83844WESTLEY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPLIVO\.COM\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bHARRENS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bACTIVITY\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bANALYSIS\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bSPEEDWAY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bAMPM\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bLOVE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bONL\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bX0000\b'), '4. PAYROLL HAH'),
-    (re.compile(r'(?i)\bJOINHOMEBASE\.COM\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bPETROL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bWM\.COM\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bACC\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bAUTOMATIC\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bINDIVIDUAL\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bSPIRIT\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bOUTSIDE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bEMPYREALENTERPRI\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bBILLB\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bA35810\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bDNS\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bALARM\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bAIRL\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bFRAZIE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bJOINTCOMMERCE\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bDMV\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bEBMUD\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bELECTRICITY\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bTMOBILE\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bLHI\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bCSC\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFASTRAK\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSTOCK\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bEPAYMENT\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bBUTTONWILLOW\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bWEINSTEIN\b'), '3. RENT EXPENSE'),
-    (re.compile(r'(?i)\bPARTN\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bVERCEL\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCABBAGE\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bECHTRAI\b'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bAMZN\.COM\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bGITHUB\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bHISIG\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bAIRCALL\.IO\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bONFLEET\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bATT\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bMANDELA\b'), '3. RENT EXPENSE'),
-    (re.compile(r'(?i)\bMARKETPLACE\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bBROWSERSTACK\.COM\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bMEDIWASTE\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bPGANDE\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bMSFT\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCITI\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bSWA\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bANALYTIC\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bHONG\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bADMIN\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCANVA\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bENTERPRISE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bMUNICIPAL\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bKONCAUSEWAY\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bAPPFOLIO\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bPCS\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bCALLRAIL\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bDNH\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bORIN\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bADT\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bELEVEN\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bAUTOPY\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bPREPD\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bCREATIVE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bSAMSARA\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bSPECTRUM\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bEXXON\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bADS7475396058\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bACCOUNTFEE\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bATM\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bDIXON\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFEI\b'), '3. RENT EXPENSE'),
-    (re.compile(r'(?i)\bMARCO\b'), '3. RENT EXPENSE'),
-    (re.compile(r'(?i)\bACROPRO\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bATLASSIAN\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCOMETCHAT\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bSUBS\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bTRELLO\.COM\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCHEVLEBEC\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPASSNY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSMOAKLANDPORTH\b'), '1. RETAIL SOCAL'),
-    (re.compile(r'(?i)\bLC2400\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bPMNT\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bSTATION\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bBUCKET\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bHONEY\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bPARKINGCENTRA\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bWHSE\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bALPINE\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bIOT\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bACHTRANS\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bXPRESSCPTL\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bREMITCTR\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bSQJERSEY\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bPRIMO\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bSPAGHETTI\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bWTH\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bCITYOFSAC_BIZTAXONLINE\b'), '7. TAXES'),
-    (re.compile(r'(?i)\bINN\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bBILLBOAR\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSPARKS\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSTATIOOAKLAND\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bEXCISE\b'), '7. TAXES'),
-    (re.compile(r'(?i)\bSAC\.HDLGOV\b'), '7. TAXES'),
-    (re.compile(r'(?i)\bSACRAMEN\b'), '7. TAXES'),
-    (re.compile(r'(?i)\bHONEYBUCKET\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bBRYANT\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bGILBE\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bHOLIDAY\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bROOTS\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bECOGREENINDUSTRIES\.COM\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bCENTER\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPEWESTLEY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSECRETARY\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bKING\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bBACKGROUND\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bZOOM\.US\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\b079259SAN\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCALIF\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCHANGERS\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFARMS\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bPATCHWORK\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bSTONEMARK\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bEDISON\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bEVENT\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bUSA\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bDELIGHTED\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bGODADDY\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bLIVE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bSCAN\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bPETROLEUM\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bELITESECURI\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bPAYMENTUS\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bPURCHASE09100001\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bFRONT\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bERACTOLL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bGAWFCO\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bINT\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bMASH\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bWESTLEY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bBAKESFIELD\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bMAITLANDM\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bADS3407900941\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bFLAVORS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bOLD\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bGREENBAXMRB\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bGODADDY\.COM\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bSTATIOORINDA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSIBANNA\b'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bTWITCHTVDON\b'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bUTILITY\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bCONES\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bCUSTOM\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bFILTRATION\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bPRM\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bROOT\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bCELL\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bWIDE\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bWORLDWIDE\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\b018\.00\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bEXXONMOBIL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bRETAIL_PAY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bNET\b'), '4. PAYROLL SOCAL'),
-    (re.compile(r'(?i)\bREM\b'), '4. PAYROLL SOCAL'),
-    (re.compile(r'(?i)\bHIS2000444\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bHIS2000461\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bINS\.PMTS\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bNEXT\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bPREMIU\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bWAVE\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bSLO\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bMETER\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bNETWOR\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bDOPE\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSPRINGBIG\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bHONGKONG\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bSCIENCES\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bEMPYREAL\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bGREENBAXDEBITCAR\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bXXXXXXXXXXXX8630\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bFHL\b'), '1. RETAIL DMD'),
-    (re.compile(r'(?i)\bAUTOMOT\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bC043488NEWARK\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCHEVWESTLEY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bIMPORT\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPILOT\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bROBBIE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bTIRE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\b08\.15\.2023\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bHOLDING\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bAIRLINES\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bREADYREFRESH\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bWATERSERV\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bMEDIAJEL\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSEMRUSH\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bOPSMO\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bDROPBOX\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bODOO\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bPTB\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bSYS\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bDISPENSARY\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bLICENSING\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bNORTHWEST\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bMANTECA\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bMONTEREY\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bTECHNO\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bBOARDING\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bCANOPY\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bJERSEY\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bONBOARD\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bUPGRADED\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bARIEL\b'), '4. PAYROLL SUB'),
-    (re.compile(r'(?i)\bDEMAND\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSTEADY\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bCKO\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bGSUITE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bXXXXXXXXXXXX7706\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bAVISNYCFEE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCHANGER\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPANOCHE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSINCLAIBUTTONWILLOW\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bYOUNG\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bBAKED\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bDISPE\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bFRESHLY\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bARORA\b'), '1. SUBLIME'),
-    (re.compile(r'(?i)\bPRIMPATCHARA\b'), '1. SUBLIME'),
-    (re.compile(r'(?i)\bJPS\b'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bHIS2000442\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bCONED\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bFSI\b'), '3. UTILITIES'),
-    (re.compile(r'(?i)\bINDIO\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bALKHEMIST\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bOYAMASUSH\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bRES\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bMELISSA\b'), '4. PAYROLL SUB'),
-    (re.compile(r'(?i)\bXFINITY\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bF54C43DBBDB1\b'), '4. PAYROLL HAH'),
-    (re.compile(r'(?i)\bCLTV8\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bSENDGRID\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bEARTHWISE\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bWILTON\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bACCELA\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bKINDLE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bSHOPIFY\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bUNLTD\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bDIABLO\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bHILLS\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bJOE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPASAN\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bROCKET\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPAYROLLSYS\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bASSETS\b'), '6. CONSULTANT & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bFIXED\b'), '6. CONSULTANT & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bIMPROVEMENTS\b'), '6. CONSULTANT & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bLEASEHOLD\b'), '6. CONSULTANT & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bCAFRNCHISTXBRD\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bCONFECTIONS\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bPURPLE\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bFINANCING\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bPFS\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bEVERON\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bCHO\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bFLORA\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bFLORATERRA\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bSONOMA\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bHEART\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bPUREST\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bANT\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bSAIGONHOU\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bTST\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bOBATA\b'), '4. PAYROLL SUB'),
-    (re.compile(r'(?i)\bFEDEX\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bTARGET\.COM\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bX0001\b'), '4. PAYROLL HAH'),
-    (re.compile(r'(?i)\bX1182\b'), '4. PAYROLL HAH'),
-    (re.compile(r'(?i)\bANA\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bELHSBCHKHHHKH\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bEXTRACTION\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bFRAGRANCE\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bLTD\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bMOLDS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bPORTER\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bFAX\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bMARKETP\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bTIME\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\b83232RCH\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bBLV\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFLYING\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFRESNO\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPLAZA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bRENTAL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSTATIOCASTAIC\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSTREET\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bBARR\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bGOMES\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bIRMA\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bLEONIDAS\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bMICHAEL\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bPROCESSING\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bHONOR\b'), '6. CONSULTANT & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bBILL_PAY\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bTWENTY8GRAMZ\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bPAYMENTS\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bEUNOIA\b'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bLZC\b'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
-    (re.compile(r'(?i)\bACME\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bEXTINGUISHER\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bHILIFE\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bFINANCIALS\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bBLOOM\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bCALITA\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bEXTRACT\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bMEGANS\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bNICE\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bWELLNES\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bFARMER\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bFRIDGE\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bWINGSTOP\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bNETWORKS\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bPIN\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bRETA\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\b3QHK\b'), '4. PAYROLL HAH'),
-    (re.compile(r'(?i)\bMETRO\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bPUBLISHING\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bTENSTRIKE\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bTRINITY\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bWPY\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bZENITH\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bPRECISION\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bSHENZHEN\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bWEBSTAURANT\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bACDFEE\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bARMOREDCAR\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bDATED\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bGROWTH\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bVENMO\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bSAEFONG\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\b00000WESTLEY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\b07127ARCO\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\b83321BASRA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\b83332WINTERS\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bARCBUTTONWILLOW\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCHEVBERKELEY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCHEVORINDA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCORNER\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFOUR\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bINSIDE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSPRINGTOWN\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSUPER\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bTRUCK\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bZIPPY\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bBRIANA\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bJAVEN\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bJOHNSON\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bKANDY\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bMARIA\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bMORALES\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bYENI\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bOIL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bDENNIS\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bFUEL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSECURITY\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bLABS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bINTERCOMPANY\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bSCHG\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bAPPS\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bBANK\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bSERIAL\b'), '4. PAYROLL HAH'),
-    (re.compile(r'(?i)\bUNIFORMS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bGAS\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bADVERTISING\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bPROMOTION\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bALIBABA\.COM\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bOUTDOOR\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bAUTOMOTIVE\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bMARKETING\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bLUNCHES\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bCLOUD\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCHANNA\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bMEALS\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bEPAY\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bTWILIO\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bDRIVER\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bOPERATIONS\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bERIC\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bOAK\b'), '1. RETAIL DMD'),
-    (re.compile(r'(?i)\bPRIVATE\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bLAZ\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bPKG\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bAMEX\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bMISC\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bXXXXXXXXXXXX8205\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bDEPOS\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bTAXES\b'), '7. TAXES'),
-    (re.compile(r'(?i)\bDOUG\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bONE\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bGPS\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bDCC\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bFINANCE\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bRAJ\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bTELEPHONE\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bVALERO\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSHOP\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCARD\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bFORMSWIFT\.COM\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bMOMENTUM\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bLABELS\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bMKTPLACE\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bACCOUNT\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bFAMILY\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bPROPERTY\b'), '6. INSURANCE'),
-    (re.compile(r'(?i)\bREBILL\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bFLORALS\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bMART\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bKUSHMEN\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bDELIV\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bLESS\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bPACKAGING\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bLOCAL\b'), '3. RENT EXPENSE'),
-    (re.compile(r'(?i)\bSTOP\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\b08\.01\.2023\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bGENERAL\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bCAPITAL\b'), '2. CC PAYMENT'),
-    (re.compile(r'(?i)\bTECHNOLOGY\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bDEEP\b'), '6. MARKETING'),
-    (re.compile(r'(?i)\bHEGENBERGER\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bSINCLAIR\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCOSTCO\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bLONG\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bINBOUND\b'), '1. DISTRIBUTION NY'),
-    (re.compile(r'(?i)\bBADUA\b'), '1. SUBLIME'),
-    (re.compile(r'(?i)\bMARISA\b'), '1. SUBLIME'),
-    (re.compile(r'(?i)\bIBUDDY\b'), '5. INVENTORY'),
-    (re.compile(r'(?i)\bPSADMINIST\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bCONFIRMED\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bPICKUP\b'), '2. TRANSFER'),
-    (re.compile(r'(?i)\bMETERS\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bNYCDOT\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bALAMEDA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bCANNABIS\b'), '1. RETAIL HAH'),
-    (re.compile(r'(?i)\bOTC\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bTRAVEL\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bHAUL\b'), '6. OFFICE/GENERAL SUPPLIES'),
-    (re.compile(r'(?i)\bPAL\b'), '5. OTHER COGS'),
-    (re.compile(r'(?i)\bSMO\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bSQUARE\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bRIVERSIDE\b'), '1. DISTRIBUTION'),
-    (re.compile(r'(?i)\bWORLD\b'), '6. BANK CHARGES & FEES'),
-    (re.compile(r'(?i)\bSPENCER\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bINVO\b'), '3. SECURITY EXPENSE'),
-    (re.compile(r'(?i)\bSOFTWARE\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bGSUITE_SMOAKLA\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\bPERMIT\b'), '6. LICENSES & PERMITS'),
-    (re.compile(r'(?i)\bASHS\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bROTTEN\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bORINDA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bUNITED\b'), '6. TRAVEL & MEALS EXPENSES'),
-    (re.compile(r'(?i)\bSOLUTIONS\b'), '6. APPS & SOFTWARE'),
-    (re.compile(r'(?i)\b08\.14\.2023\b'), '4. PAYROLL DMD'),
-    (re.compile(r'(?i)\bANTIOCH\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bAREA\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bKIM\b'), '1. DISTRIBUTION DMD'),
-    (re.compile(r'(?i)\bNELLA\b'), '6. VEHICLE EXPENSES'),
-    (re.compile(r'(?i)\bWAY\b'), '6. VEHICLE EXPENSES'),
+    # CC Payment (explicit)
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCHASE\s+CREDIT\s+CRD\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), '2. CC PAYMENT', 'new-chase-credit-crd-dama-7403'),
+
+    # Licenses & Permits (EWB 3447 condition row)
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bEWB\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+3447\b'), '6. LICENSES & PERMITS', 'new-ewb-ewb-3447'),
+
+    # Distribution DMD via specific bank
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCIRCLE\s+MUSKRAT\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '1. DISTRIBUTION DMD', 'new-circle-muskrat-ewb-8452'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCURRENCY\s+AND\s+COIN\s+DEPOSITED\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '1. DISTRIBUTION DMD', 'new-currency-coin-ewb-8452'),
+
+    # Transfer via bank
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bHAH\s+7\s+CA\s+LLC\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '2. TRANSFER', 'new-hah-7-ca-llc-ewb-8452'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bSMOAKLAND\s+WEED\s+DELIVERY\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '2. TRANSFER', 'new-smoakland-weed-delivery-ewb-8452'),
+
+    # Payroll by bank
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bGUSTO\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+5597\b'), '4. PAYROLL SOCAL', 'new-gusto-dama-5597'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bGUSTO\b.*\bBANK_ACCOUNT_CC:[^|]*\bKP\s+6852\b'), '4. PAYROLL HAH', 'new-gusto-kp-6852'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bGUSTO\b.*\bBANK_ACCOUNT_CC:[^|]*\bCC\s+9551\b|\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+2211\b'), '4. PAYROLL SUB', 'new-gusto-sub-2211'),
+
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '4. PAYROLL DMD', 'new-paynw-ewb-8452'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bKP\s+6852\b'), '4. PAYROLL HAH', 'new-paynw-kp-6852'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+2035\b'), '4. PAYROLL DMD', 'new-paynw-nbcu-2035'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+SWD\b'), '4. PAYROLL DMD', 'new-paynw-nbcu-swd'),
+
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bWURK\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), '4. PAYROLL DMD', 'new-wurk-dama-7403'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bWURK\b.*\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+SWD\b'), '4. PAYROLL DMD', 'new-wurk-nbcu-swd'),
+
+    # NY Expense (NEW bucket)
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCHANG\s+YI\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), '8. NY EXPENSE', 'new-chang-yi-dama-7403'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bMARCO\s+FEI\b'), '8. NY EXPENSE', 'new-marco-fei-ny-expense'),
+
+    # General rules
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:CALITA\ INC\.|ALKHEMIST\ DM\ LLC|SUMMIT\ LOCATIONS\ TRANSFER\ 240104\ 4ZN2A7PJMYQD|ODOO\ B2B|PCF\ DISTRO)(?![A-Z0-9])'), '1. DISTRIBUTION'),
+    (re.compile(r'(?i)\b(?:CURRENCY\ AND\ COIN\ DEPOSITED|BRYANT\ AND\ GILBE|AREA\ 29\ LLC|ANTIOCH\ LLC|MONTEREY\ LLC|MANTECA\ LLC|OTC\ INDIO\ LLC|MOM\ GO\ LLC|SONOMA\ CHO\ LLC|SYLMAR\ LLC|HILIFE\ GROUP|KIM\ INVESTMENTS|THE\ NORDHOFF\ COM|OTC\ VAN\ NUYS|ASHS\ FIRST\ LLC)\b'), '1. DISTRIBUTION DMD'),
+    (re.compile(r'(?i)\b(?:HAPPY\ DAYS\ DISPENSARY\ INC|NSEW\ TRADING\ COMPANY\ LLC|GUARDIAN\ WELLNESS|TWENTY8GRAMZ|NUCLEUS\ DISPENSARY|FRESHLY\ BAKED\ NYC|EXIT\ 31\ EXOTIC)\b'), '1. DISTRIBUTION NY'),
+    (re.compile(r'(?i)\b(?:CASHLESS\ ATM|FHL\ WEB\ INC|CCD\ SETTLEMENT)\b'), '1. RETAIL DMD'),
+    (re.compile(r'(?i)\b(?:DNS|SWITCH\ COMMERCE|SQUARE\ INC|OU\ SAEFONG)\b'), '1. RETAIL HAH'),
+    (re.compile(r'(?i)\b(?:B2B|FLOR\ X|PRIMPATCHARA\ ARORA|MARISA\ K\ BADUA)\b'), '1. SUBLIME'),
+    (re.compile(r'(?i)\b(?:CC\ 9551|CC\ 8305|CC\ 8202|CC\ 8267|CC\ PAYMENT)\b'), '2. CC PAYMENT'),
+    (re.compile(r'(?i)\b(?:HAH|NBCU\ 2035|DELIVERMD|EWB\ 3439|EWB\ 3447|SUBLIME\ MACHINING|SUBLIME\ MACHINING\ INC|TPH|GREENBAX\ 0073|THE\ PUREST\ HEART\ 786\ INC|HAH\ 7\ CA\ LLC)\b'), '2. TRANSFER'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:WEINSTEIN\ LOCAL|MANDELA\ PARTNERS\ LLC|SACRAMENTO\ RENT|MARCO\ FEI|RA\ \&\ BL\ BEGGS\ TRUST)(?![A-Z0-9])'), '3. RENT EXPENSE'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:H\ \&\ L\ PRIVATE\ SECURITY|HONEY\ BUCKET|ADT|BAY\ ALARM\ COMPANY|SECURITY\ MARKETING\ KING|ELITESECURITY|ALARM\ PRO|EVERON\ LLC|ACME\ FIRE\ EXTINGUISHER\ CO)(?![A-Z0-9])'), '3. SECURITY EXPENSE'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:WASTE\ MGMT|PG\&E|EBMUD|MEDIWASTE\ DISPOSAL\ LLC|SACRAMENTO\ MUNICIPAL|EDISON|CONED)(?![A-Z0-9])'), '3. UTILITIES'),
+    (re.compile(r'(?i)\b(?:PAYNW|MG\ TRUST|SPENCER\ YOUNG\ LAW\ PC|ATLAS)\b'), '4. PAYROLL DMD'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:E\.T\.I\.\ FINANCIAL)(?![A-Z0-9])'), '4. PAYROLL HAH'),
+    (re.compile(r'(?i)\b(?:MCGRIFF)\b'), '4. PAYROLL SUB'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:CLOVER\ VALLEY|LC\ 2400|NORTHWEST\ CONFECTIONS\ CA\ LLC|EPOD\ HOLDINGS\ LLC|PATCHWORK\ FARMS|KUSHMEN\ \&\ BAKESFIELD\ ENTERPRISES|FAMILY\ FLORALS|IBUDDY\ INC|NORTHWEST\ CONFECTIONS|HIGHLAND\ PARK\ PATIENT\ COLLECTIVE\ INC\.|LUCKY\ FAMILY\ BRAND|HIGHLAND\ PARK\ PATIENT\ COLLECTIVE)(?![A-Z0-9])'), '5. INVENTORY'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:BELCOSTA\ LABS|CINTAS\ CORP|HARRENS\ LAB\ INC\.|ALIBABA\.COM|ALIBABA|ECOGREENINDUSTRIES|ROOT\ SCIENCES|ONLINE\ LABELS|SP\ PRM\ FILTRATION|CUSTOM\ CONES\ USA|WILTON|EARTHWISE\ PACKAGING|OLD\ PAL\ LLC|MODERNIST\ PANTRY|HONGKONG\ PORTER|CALIFORNIA\ EXTRACTION|THE\ WEBSTAURANT\ STORE\ INC|CHEFSTORE|ADCHEM\ LLC)(?![A-Z0-9])'), '5. OTHER COGS'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:ADOBE|QUICKBOOKS|BLAZE|JOINHOMEBASE|VERCEL|GITHUB|AMAZON\ WEB\ SERVICES|AIRCALL|GOOGLE\ CLOUD|GOOGLE\ GSUITE|BROWSERSTACK|PS\ ADMINISTRATORS|CANVA|MSFT|CALLRAIL\ INC|SPECTRUM|SAMSARA|TRELLO|COMETCHAT|GODADDY\.COM)(?![A-Z0-9])'), '6. APPS & SOFTWARE'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:NBCU|EMPYREAL\ ENTERPRISES|KEYPOINT\ CREDIT\ UNION|EASTWEST\ BANK|GREENBAX\ MARKETPLACE|MONTHLY\ MAINTENANCE\ FEE|WORLDWIDE\ ATM|US\ CORPORATION|VENMO|NORTH\ BAY\ CREDIT\ UNION|PAYPAL|ISLAMIC\ CENTER\ OF\ VENTURA\ COUNTY|CCD\ \-\ FINANCE\ CONTRACT\ PAYMENT\ 79590618\ E\ T)(?![A-Z0-9])'), '6. BANK CHARGES & FEES'),
+    (re.compile(r'(?i)\b(?:HONOR|HEADQUARTERS\ LLC)\b'), '6. CONSULTANT & PROFESSIONAL SERVICES'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:ECHTRAI\ LLC|TWITCHTVDON|SIBANNA\ CONSULTANTS|JPS\ INC\.|EUNOIA\ CONSULTING\ GROUP\ LLC|DOUG\ NGO)(?![A-Z0-9])'), '6. CONSULTANT, LEGAL & PROFESSIONAL SERVICES'),
+    (re.compile(r'(?i)\b(?:HISIG|STONEMARK|NEXT\ WAVE)\b'), '6. INSURANCE'),
+    (re.compile(r'(?i)\b(?:LAW\ OFFICE\ OF\ CARLOS\ JATO)\b'), '6. LEGAL FEES'),
+    (re.compile(r'(?i)\b(?:DCC|CA\ SECRETARY\ OF\ STATE|CAFRNCHISTXBRD|FRANCHISE\ TAX)\b'), '6. LICENSES & PERMITS'),
+    (re.compile(r'(?i)\b(?:LB\ MEDIA\ GROUP\ LLC|KLAVIYO|MESA|GHOST\ MGMT|PLIVO|TWILIO|JOINTCOMMERCE|LHI|GOOGLE\ ADS|HAPPY\ CABBAGE|ALPINE\ IQ|SPARKS\ MARKETING|MESA\ OUTDOOR\ BILLB|DEEP\ ROOTS|ZENITH\ BILLBOARD|SPRINGBIG|DOPE\ MARKETING|SEMRUSH|MEDIAJEL|STEADY\ DEMAND)\b'), '6. MARKETING'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:COMCAST|T\-MOBILE|ATT|APPFOLIO|SPAGHETTI\ NETWORK\ INC|PRIMO\ WATER|FEDEX|COSTCO|TARGET|READYREFRESH|U\-HAUL|INC|GOOGLE\ FI|THE\ HOME\ DEPOT)(?![A-Z0-9])'), '6. OFFICE/GENERAL SUPPLIES'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:SOUTHWEST|DOORDASH|MORGAN\ AT\ PROVOST\ SQUARE|UNITED|SPIRIT\ AIRLINES|MORGAN\ AT\ PROVOST|LAZ\ PKG\ OAKLAND|HOLIDAY\ INN|THE\ MORGAN|EARLYBRD|UPGBOARD|CANOPY\ JERSEY\ CITY|NYCDOT\ PARKING\ METERS|S\ FRIDGE|FARMER|ALAMO\ RENT\-A\-CAR|LAFAYETTE\ RES\ METER\ PARK)(?![A-Z0-9])'), '6. TRAVEL & MEALS EXPENSES'),
+    (re.compile(r'(?i)(?<![A-Z0-9])(?:CHEVRON|SHELL|FASTRAK|ARCO|SPEEDWAY|LOVE|0807\ OUTSIDE|EXXON|ONFLEET|ENTERPRISE\ RENT\-A\-CAR|CA\ DMV|BUTTONWILLOW\ SINCLAIR|GAS\ 4\ LESS|PASS|E\-Z|DIXON\ GAS\ \&\ SHOP|MOMENTUM\ IOT|GAS\ \&\ FOOD|DMV|7\-ELEVEN)(?![A-Z0-9])'), '6. VEHICLE EXPENSES'),
+    (re.compile(r'(?i)\b(?:INFINITY)\b'), '6. VEHICLE INSURANCE'),
+    (re.compile(r'(?i)\b(?:SALES\ AND\ USE|EXCISE|CITY\ OF\ SACRAMENTO|CDTFA)\b'), '7. TAXES'),
 ]
 
 # Which fields we concatenate to form the searchable text.
-# Order matters; we include payee_vendor if already resolved by a previous rulebook.
-_SOURCE_COLS: List[str] = [
-    "bank_account", "subentity", "bank_cc_num",
-    "payee_vendor",                 # <-- helps make rules simpler/cleaner
-    "description", "extended_description",
+_SOURCE_COLS = [
+    "payee_vendor", 'bank_account_cc', 'amount',
 ]
 
 # ---------------------------------------------------------------------------
@@ -552,11 +104,11 @@ def _normalize_text(s: str) -> str:
 def _concat_row(row: Dict) -> str:
     parts: List[str] = []
     for c in _SOURCE_COLS:
-        v = row.get(c, "")
-        if v is None:
-            v = ""
-        parts.append(str(v))
-    return _normalize_text(" | ".join([p for p in parts if p]))
+        v = row.get(c, "") or ""
+        v = str(v)
+        if v.strip():
+            parts.append(f"{c.upper()}: {v}")
+    return _normalize_text(" | ".join(parts))
 
 def _rule_tag(i: int, custom: str | None) -> str:
     """
@@ -566,6 +118,76 @@ def _rule_tag(i: int, custom: str | None) -> str:
     """
     rid = custom if (custom and custom.strip()) else str(i)
     return f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rid}"
+
+_POSTPROCESS_SOURCE = "postprocess"
+
+def postprocess(df: "pd.DataFrame") -> "pd.DataFrame":  # type: ignore
+    if df is None or df.empty:
+        return df
+
+    need = {"payee_vendor", "bank_account_cc", "amount", "cf_account"}
+    if not need.issubset(df.columns):
+        return df
+
+    out = df.copy()
+    amt = pd.to_numeric(out["amount"], errors="coerce")
+    payee = out["payee_vendor"].fillna("").astype(str).str.upper()
+    acct = out["bank_account_cc"].fillna("").astype(str).str.upper()
+
+    def stamp(mask, value, rule_id: str):
+        if not mask.any():
+            return
+        out.loc[mask, "cf_account"] = value
+        if "cf_account_rule_tag" in out.columns:
+            out.loc[mask, "cf_account_rule_tag"] = f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rule_id}"
+        if "cf_account_source" in out.columns:
+            out.loc[mask, "cf_account_source"] = _POSTPROCESS_SOURCE
+        if "cf_account_confidence" in out.columns:
+            out.loc[mask, "cf_account_confidence"] = 1.0
+
+    # --- Aeropay by bank + sign ---
+    aer = payee.eq("AEROPAY")
+
+    stamp(aer & acct.eq("DAMA 5597") & (amt > 0), "1. RETAIL SOCAL", "pp-aeropay-dama-5597-pos")
+    stamp(aer & acct.eq("DAMA 5597") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-dama-5597-neg")
+
+    stamp(aer & acct.eq("KP 6852") & (amt > 0), "1. RETAIL HAH", "pp-aeropay-kp-6852-pos")
+    stamp(aer & acct.eq("KP 6852") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-kp-6852-neg")
+
+    stamp(aer & acct.eq("NBCU 2035") & (amt > 0), "1. RETAIL DMD", "pp-aeropay-nbcu-2035-pos")
+    stamp(aer & acct.eq("NBCU 2035") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-nbcu-2035-neg")
+
+    stamp(aer & acct.eq("NBCU SWD") & (amt > 0), "1. RETAIL DMD", "pp-aeropay-nbcu-swd-pos")
+    stamp(aer & acct.eq("NBCU SWD") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-nbcu-swd-neg")
+
+    # --- Armored Car sign ---
+    arm = payee.eq("ARMORED CAR")
+    stamp(arm & (amt > 0), "1. RETAIL DMD", "pp-armored-car-pos")
+    stamp(arm & (amt < 0), "6. BANK CHARGES & FEES", "pp-armored-car-neg")
+
+    # --- Bud Technology sign ---
+    bud = payee.eq("BUD TECHNOLOGY")
+    stamp(bud & (amt > 0), "1. DISTRIBUTION DMD", "pp-bud-technology-pos")
+    stamp(bud & (amt < 0), "5. OTHER COGS", "pp-bud-technology-neg")
+
+    # --- OSS sign ---
+    oss = payee.eq("OSS")
+    stamp(oss & (amt > 0), "1. RETAIL HAH", "pp-oss-pos")
+    stamp(oss & (amt < 0), "6. BANK CHARGES & FEES", "pp-oss-neg")
+
+    # --- Odoo B2B + EWB 3447 + positive ---
+    odoo = payee.eq("ODOO B2B") & acct.eq("EWB 3447") & (amt > 0)
+    stamp(odoo, "1. DISTRIBUTION DMD", "pp-odoo-b2b-ewb-3447-pos")
+
+    # --- Blaze exact ±1050 -> Apps & Software ---
+    blaze = payee.eq("BLAZE") & (amt.abs() == 1050.00)
+    stamp(blaze, "6. APPS & SOFTWARE", "pp-blaze-1050")
+
+    # --- Xeven Solutions exact ±3200 -> Marketing ---
+    xev = payee.eq("XEVEN SOLUTIONS") & (amt.abs() == 3200.00)
+    stamp(xev, "6. MARKETING", "pp-xeven-3200")
+
+    return out
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -593,13 +215,11 @@ def infer(row: Dict) -> Tuple[str, str]:
 
     return (UNKNOWN, "")
 
-def apply_rules_df(df) -> "pd.DataFrame":  # type: ignore
+def apply_rules_df(df) -> "pd.DataFrame":
     """
     Vectorized convenience that produces 4 columns:
       cf_account, cf_account_rule_tag, cf_account_confidence, cf_account_source
-    (Same semantics the universal resolver will add.)
     """
-    import pandas as pd  # local import to keep this module light if pandas isn't needed
 
     values: List[str] = []
     tags: List[str] = []
@@ -624,4 +244,4 @@ def apply_rules_df(df) -> "pd.DataFrame":  # type: ignore
     out["cf_account_rule_tag"] = tags
     out["cf_account_confidence"] = confs
     out["cf_account_source"] = srcs
-    return out
+    return postprocess(out)

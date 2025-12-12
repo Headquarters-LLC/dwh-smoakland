@@ -1,0 +1,26 @@
+# docker-compose.gmail.yml
+# Gmail email sending: force Airflow to use SSL (SMTP_SSL) instead of STARTTLS.
+# Use this together with a runtime Airflow Connection for Gmail (no secrets in files).
+
+services:
+  airflow-webserver:
+    environment:
+      # Force implicit SSL (465) and disable STARTTLS so Airflow uses smtplib.SMTP_SSL
+      AIRFLOW__SMTP__SMTP_HOST: "smtp.gmail.com"
+      AIRFLOW__SMTP__SMTP_PORT: "465"
+      AIRFLOW__SMTP__SMTP_SSL: "True"
+      AIRFLOW__SMTP__SMTP_STARTTLS: "False"
+
+  airflow-scheduler:
+    environment:
+      AIRFLOW__SMTP__SMTP_HOST: "smtp.gmail.com"
+      AIRFLOW__SMTP__SMTP_PORT: "465"
+      AIRFLOW__SMTP__SMTP_SSL: "True"
+      AIRFLOW__SMTP__SMTP_STARTTLS: "False"
+
+  airflow-triggerer:
+    environment:
+      AIRFLOW__SMTP__SMTP_HOST: "smtp.gmail.com"
+      AIRFLOW__SMTP__SMTP_PORT: "465"
+      AIRFLOW__SMTP__SMTP_SSL: "True"
+      AIRFLOW__SMTP__SMTP_STARTTLS: "False"
