@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Tuple, List, Dict
 import re
+import pandas as pd
 
 """
 qbo_account rulebook
@@ -13,7 +14,7 @@ qbo_account rulebook
 """
 
 RULEBOOK_NAME = "qbo_account"
-RULEBOOK_VERSION = "2025.11.11"  # bump: add scoped rules + CSV-prepended rules
+RULEBOOK_VERSION = "2025.12.13"  # bump: add scoped rules + CSV-prepended rules
 UNKNOWN = ""                         # <-- fallback is blank for unknowns
 
 # ---------------------------------------------------------------------------
@@ -21,6 +22,68 @@ UNKNOWN = ""                         # <-- fallback is blank for unknowns
 # If no label is provided, the ordinal index (1-based) is used for the tag.
 # ---------------------------------------------------------------------------
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
+    # NEW: TPH scoped
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bTPH\b.*\bPAYEE_VENDOR:[^|]*\bAD\s+ASTRA\s+LAW\s+GROUP\b'),
+     'TPH786 Expenses:Legal Fees', 'new-tph-ad-astra-legal'),
+
+    # Apps & Software -> Smoakland Media Expense:Software & Apps
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bTPH\b.*\bPAYEE_VENDOR:[^|]*\b(?:ADOBE|AIRCALL|AMAZON\s+WEB\s+SERVICES|APPFOLIO(?:,\s*INC)?|BROWSERSTACK|CANVA|JOINHOMEBASE|QUICKBOOKS|SPECTRUM)\b'),
+     'Smoakland Media Expense:Software & Apps', 'new-tph-software-apps'),
+
+    # Internet & Telephone (Administration bucket, etc.)
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bTPH\b.*\bPAYEE_VENDOR:[^|]*\b(?:ATT|COMCAST|FRONTIER\s+COMM\s+CORP\s+WEB|T\-MOBILE)\b'),
+     'Smoakland Media Expense:Internet & Telephone Expense', 'new-tph-internet-telephone'),
+
+    # Advertising & Promotion (Marketing)
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bTPH\b.*\bPAYEE_VENDOR:[^|]*\b(?:GHOST\s+MGMT|KLAVIYO|SEMRUSH|SPRINGBIG|STEADY\s+DEMAND|XEVEN\s+SOLUTIONS)\b'),
+     'Smoakland Media Expense:Advertising and Promotion', 'new-tph-advertising'),
+
+    # Office Expenses (Amazon CC 7639)
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bTPH\b.*\bPAYEE_VENDOR:[^|]*\bAMAZON\b.*\b(?:BANK_ACCOUNT_CC|BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bCC\s*7639\b'),
+     'TPH786 Expenses:Office Expenses', 'new-tph-amazon-cc7639-office'),
+
+    # -----------------------------
+    # NEW: SSC scoped (Distribution / Sublime)
+    # -----------------------------
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\b(?:ALAMO\s+TOLL|AVIS\s+FEE|CA\s+DMV|ENTERPRISE\s+RENT\-A\-CAR|ERACTOLL|ORINDA)\b'),
+     'Smoakland Distribution Expenses:Distribution Vehicle Expenses', 'new-ssc-dist-vehicle'),
+
+    (re.compile(r"(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\b(?:ARCO|CHEVRON|EXXON|GAWFCO\s+WESTLEY|LOVE'S|PILOT|UNION|VALERO)\b"),
+     'Smoakland Distribution Expenses:Fuel & Oil', 'new-ssc-fuel-oil'),
+
+    # Amazon CC 9551 -> Production Supplies
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\bAMAZON\b.*\b(?:BANK_ACCOUNT_CC|BANK_ACCOUNT|BANK_CC_NUM):[^|]*\bCC\s*9551\b'),
+     'Cost of Production:Production Supplies', 'new-ssc-amazon-cc9551-prod-supplies'),
+
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\bCHEFSTORE\b'),
+     'Cost of Production:Production Supplies', 'new-ssc-chefstore-prod-supplies'),
+
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\bCINTAS\s+CORP\b'),
+     'Cost of Production:Uniforms', 'new-ssc-cintas-uniforms'),
+
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\b(?:HARRENS\s+LAB\s+INC\.?|MCR\s+LABS\s+\-\s+NY)\b'),
+     'Cost of Production:Lab Testing', 'new-ssc-lab-testing'),
+
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\b(?:HONGKONG\s+PORTER\s+ELECTRONICS\s+LIMITED|ULINE)\b'),
+     'Cost of Production:Packaging', 'new-ssc-packaging'),
+
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\bMEDIWASTE\s+DISPOSAL\s+LLC\b'),
+     'Overhead Costs:Utilities Expense:Waste Disposal', 'new-ssc-mediwaste'),
+
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bSSC\b.*\bPAYEE_VENDOR:[^|]*\b(?:CIRCLE\s+MUSKRAT|CURRENCY\s+AND\s+COIN\s+DEPOSITED|BRYANT\s+AND\s+GILBE|OTC\s+WEHO)\b'),
+     'Distribution Revenue', 'new-ssc-distribution-revenue'),
+
+    # NY entity: NY Distribution Revenue group
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bNY\b.*\bPAYEE_VENDOR:[^|]*\b(?:BLAZE\s+420\s+LLC\s+27|CAFFIEND\s+THE\s+BUSHWICK\s+DISPENSARY|CASE\s+MANAGEMENT\s+INC|FRESHLY\s+BAKED\s+NYC|GUARDIAN\s+WELLNESS|HAPPY\s+DAYS\s+DISPENSARY\s+INC|NSEW\s+TRADING\s+COMPANY\s+LLC|NUCLEUS\s+DISPENSARY|THE\s+PEOPLES\s+JOINT|TWENTY8GRAMZ)\b'),
+     'NY Distribution Revenue', 'new-ny-distribution-revenue'),
+
+    # NY expense specific
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bNY\b.*\bPAYEE_VENDOR:[^|]*\bCHANG\s+YI\b'),
+     'Smoakland New York Expense:Commissions', 'new-ny-chang-yi-commissions'),
+    (re.compile(r'(?i)\bENTITY_QBO:[^|]*\bNY\b.*\bPAYEE_VENDOR:[^|]*\bMARCO\s+FEI\b'),
+     'Smoakland New York Expense:Rent Expense', 'new-ny-marco-fei-rent'),
+
+    #Legacy rules
     (re.compile(r'(?i)(?:\bPAYEE_VENDOR:[^|]*\bAD\s+ASTRA\s+LAW\s+GROUP\b.*?\bENTITY_QBO:[^|]*\bTPH\b|\bENTITY_QBO:[^|]*\bTPH\b.*?\bPAYEE_VENDOR:[^|]*\bAD\s+ASTRA\s+LAW\s+GROUP\b)'), 'TPH786 Expenses:Legal Fees', 'csv-1-AD-ASTRA-LAW-GROUP'),
     (re.compile(r'(?i)(?:\bPAYEE_VENDOR:[^|]*\bADOBE\b.*?\bENTITY_QBO:[^|]*\bTPH\b|\bENTITY_QBO:[^|]*\bTPH\b.*?\bPAYEE_VENDOR:[^|]*\bADOBE\b)'), 'Smoakland Media Expense:Software & Apps', 'csv-2-ADOBE'),
     (re.compile(r'(?i)(?:\bPAYEE_VENDOR:[^|]*\bAIRCALL\b.*?\bENTITY_QBO:[^|]*\bTPH\b|\bENTITY_QBO:[^|]*\bTPH\b.*?\bPAYEE_VENDOR:[^|]*\bAIRCALL\b)'), 'Smoakland Media Expense:Software & Apps', 'csv-3-AIRCALL'),
@@ -308,8 +371,20 @@ def _normalize_text(s: str) -> str:
     s = s.upper().strip()
     return " ".join(s.split())
 
+_SOURCE_COLS: List[str] = [
+    "payee_vendor",
+    "bank_account_cc",
+    "amount",
+    "cf_account",
+    "dashboard_1",
+    "entity_qbo",
+    "bank_account",
+    "bank_cc_num",
+]
+
 def _concat_row(row: Dict) -> str:
     parts: List[str] = []
+
     for c in _SOURCE_COLS:
         v = row.get(c, "") or ""
         v = str(v)
@@ -324,6 +399,77 @@ def _concat_row(row: Dict) -> str:
 
     return _normalize_text(" | ".join(parts))
 
+_POSTPROCESS_SOURCE = "postprocess"
+
+def postprocess(df: "pd.DataFrame") -> "pd.DataFrame":  # type: ignore
+    if df is None or df.empty:
+        return df
+
+    need = {"payee_vendor", "amount", "entity_qbo", "qbo_account"}
+    if not need.issubset(df.columns):
+        return df
+
+    out = df.copy()
+    amt = pd.to_numeric(out["amount"], errors="coerce")
+    payee = out["payee_vendor"].fillna("").astype(str).str.upper()
+    ent = out["entity_qbo"].fillna("").astype(str).str.upper()
+
+    # usa bank_account_cc si lo tienes; si no, ajusta a BANK_ACCOUNT/BANK_CC_NUM pre-mapeado en tu pipeline
+    acct = out["bank_account_cc"].fillna("").astype(str).str.upper() if "bank_account_cc" in out.columns else pd.Series([""]*len(out))
+
+    def stamp(mask, value, rule_id: str):
+        if not mask.any():
+            return
+        out.loc[mask, "qbo_account"] = value
+        if "qbo_account_rule_tag" in out.columns:
+            out.loc[mask, "qbo_account_rule_tag"] = f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rule_id}"
+        if "qbo_account_source" in out.columns:
+            out.loc[mask, "qbo_account_source"] = _POSTPROCESS_SOURCE
+        if "qbo_account_confidence" in out.columns:
+            out.loc[mask, "qbo_account_confidence"] = 1.0
+
+    # Aeropay (por entidad + bank + signo)
+    aer = payee.eq("AEROPAY")
+    stamp(aer & ent.eq("SOCAL") & acct.eq("DAMA 5597") & (amt > 0), "SoCal Delivery Revenue", "pp-aeropay-socal-5597-pos")
+    stamp(aer & ent.eq("SOCAL") & acct.eq("DAMA 5597") & (amt < 0), "Smoakland SoCal Expense:Bank Charges & Fees", "pp-aeropay-socal-5597-neg")
+
+    stamp(aer & ent.eq("HAH 7 CA") & acct.eq("KP 6852") & (amt > 0), "Delivery Revenue:Cannabis", "pp-aeropay-hah-6852-pos")
+    stamp(aer & ent.eq("HAH 7 CA") & acct.eq("KP 6852") & (amt < 0), "Bank/Armor Fees", "pp-aeropay-hah-6852-neg")
+
+    stamp(aer & ent.eq("SSC") & acct.eq("NBCU 2035") & (amt > 0), "Delivery Revenue", "pp-aeropay-ssc-2035-pos")
+    stamp(aer & ent.eq("SSC") & acct.eq("NBCU 2035") & (amt < 0), "Bank Charges & Fees", "pp-aeropay-ssc-2035-neg")
+
+    stamp(aer & ent.eq("SWD") & acct.eq("NBCU SWD") & (amt > 0), "Delivery Revenue", "pp-aeropay-swd-swd-pos")
+    stamp(aer & ent.eq("SWD") & acct.eq("NBCU SWD") & (amt < 0), "Bank Charges & Fees", "pp-aeropay-swd-swd-neg")
+
+    # Armored Car
+    arm = payee.eq("ARMORED CAR")
+    stamp(arm & (amt > 0), "Delivery Revenue", "pp-armored-car-pos")
+    stamp(arm & (amt < 0), "Bank Charges & Fees", "pp-armored-car-neg")
+
+    # Bud Technology
+    bud = payee.eq("BUD TECHNOLOGY")
+    stamp(bud & (amt > 0), "Distribution Revenue", "pp-bud-pos")
+    stamp(bud & (amt < 0), "Cost of Inventory:Distribution Services", "pp-bud-neg")
+
+    # Odoo B2B + positive
+    odoo = payee.eq("ODOO B2B")
+    stamp(odoo & (amt > 0), "Distribution Revenue", "pp-odoo-pos")
+
+    # OSS
+    oss = payee.eq("OSS")
+    stamp(oss & (amt > 0), "Delivery Revenue:Cannabis", "pp-oss-pos")
+    stamp(oss & (amt < 0), "Bank/Armor Fees", "pp-oss-neg")
+
+    # Blaze exact ±1050
+    blaze = payee.eq("BLAZE") & (amt.abs() == 1050.00)
+    stamp(blaze, "Software & Apps", "pp-blaze-1050")
+
+    # Xeven exact ±3200
+    xev = payee.eq("XEVEN SOLUTIONS") & (amt.abs() == 3200.00)
+    stamp(xev, "Smoakland Media Expense:Advertising and Promotion", "pp-xeven-3200")
+
+    return out
 
 def _rule_tag(i: int, custom: str | None) -> str:
     rid = custom if (custom and custom.strip()) else str(i)
@@ -397,4 +543,4 @@ def apply_rules_df(df) -> "pd.DataFrame":  # type: ignore
     out["qbo_account_rule_tag"] = tags
     out["qbo_account_confidence"] = confs
     out["qbo_account_source"] = srcs
-    return out
+    return postprocess(out)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Iterable, Tuple, List, Dict
 import re
+import pandas as pd
 
 """
 dashboard_1 rulebook
@@ -14,7 +15,7 @@ dashboard_1 rulebook
 """
 
 RULEBOOK_NAME = "dashboard_1"
-RULEBOOK_VERSION = "2025.10.04"   # bump when rules change
+RULEBOOK_VERSION = "2025.12.13"   # bump when rules change
 UNKNOWN = ""                      # fallback must be BLANK, as requested
 
 # ---------------------------------------------------------------------------
@@ -23,6 +24,57 @@ UNKNOWN = ""                      # fallback must be BLANK, as requested
 #            dashboard_1_regex_rules.py (_RULES there).
 # ---------------------------------------------------------------------------
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
+    # --- Administration ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*LEGAL\s+FEES\b'), 'ADMINISTRATION', 'cf-legal-fees'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b3\.\s*UTILITIES\b'), 'ADMINISTRATION', 'cf-utilities'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b3\.\s*RENT\s+EXPENSE\b'), 'ADMINISTRATION', 'cf-rent'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*OFFICE/GENERAL\s+SUPPLIES\b'), 'ADMINISTRATION', 'cf-office'),
+
+    # --- Technology ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*APPS\s*&\s*SOFTWARE\b'), 'TECHNOLOGY', 'cf-apps-software'),
+
+    # --- Finance ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*BANK\s+CHARGES\s*&\s*FEES\b'), 'FINANCE', 'cf-bank-fees'),
+
+    # --- HR ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b4\.\s*PAYROLL\b'), 'HR', 'cf-payroll'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*INSURANCE\b'), 'HR', 'cf-insurance'),
+
+    # --- Taxes ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b7\.\s*TAXES\b'), 'TAXES', 'cf-taxes'),
+
+    # --- Marketing ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*MARKETING\b'), 'MARKETING', 'cf-marketing'),
+
+    # --- Inventory / Wholesale ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*VEHICLE\s+EXPENSES\b'), 'INVENTORY - WHOLESALE', 'cf-vehicle'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*VEHICLE\s+INSURANCE\b'), 'INVENTORY - WHOLESALE', 'cf-vehicle-ins'),
+
+    # --- Sublime ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b5\.\s*OTHER\s+COGS\b'), 'SUBLIME', 'cf-other-cogs'),
+
+    # --- Executive ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b6\.\s*TRAVEL\s*&\s*MEALS\s+EXPENSES\b'), 'EXECUTIVE', 'cf-travel'),
+
+    # --- Default NO DEPARTMENT for Distribution / Retail / Transfer ---
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b1\.\s*DISTRIBUTION\b'), 'NO DEPARTMENT', 'cf-distribution'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b1\.\s*RETAIL\b'), 'NO DEPARTMENT', 'cf-retail'),
+    (re.compile(r'(?i)\bCF_ACCOUNT:[^|]*\b2\.\s*TRANSFER\b'), 'NO DEPARTMENT', 'cf-transfer'),
+
+    # --- New York overrides ---
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bMONTHLY\s+MAINTENANCE\s+FEE\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), 'NEW YORK', 'mmf-dama-7403-ny'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCHANG\s+YI\b'), 'NEW YORK', 'chang-yi-ny'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bE-Z\*?PASS\b'), 'NEW YORK', 'ezpass-ny'),
+
+    # --- Driver Operations - Bay ---
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bFASTRAK\b'), 'DRIVER OPERATIONS - BAY', 'fastrak-bay'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bONFLEET\b'), 'DRIVER OPERATIONS - BAY', 'onfleet-bay'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bINTELLIWORX\s+PH\b'), 'DRIVER OPERATIONS - BAY', 'intelliworx-bay'),
+
+    # --- Inventory Wholesale explicit ---
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bALAMO\s+TOLL\b.*\bBANK_ACCOUNT_CC:[^|]*\bCC\s+71000\b'), 'INVENTORY - WHOLESALE', 'alamo-toll-71000'),
+
+    # Legacy rules
     (re.compile(r'(?i)(?<![A-Z0-9])(?:COMCAST|DOORDASH|T\-MOBILE|BAY\ ALARM\ COMPANY|WEINSTEIN\ LOCAL|HONEY\ BUCKET|ECHTRAI\ LLC|SACRAMENTO\ RENT|ATT|SACRAMENTO\ MUNICIPAL|AD\ ASTRA\ LAW\ GROUP|APPFOLIO|HARBOR\ HR\ LLC|MARCO\ FEI|STONEMARK|LEGALZOOM|SENTRY|SECURITY\ MARKETING\ KING|RA\ \&\ BL\ BEGGS\ TRUST|EDISON)(?![A-Z0-9])'), 'ADMINISTRATION'),
     (re.compile(r'(?i)\b(?:FASTRAK|ONFLEET|MOMENTUM\ IOT|ALAMEDA\ IMPORT|0807\ OUTSIDE|BUTTONWILLOW\ SINCLAIR|ROCKET|PANOCHE\ FOOD\ MART|MT\ DIABLO|CALIFORNIA\ STOP|OIL\ CHANGER\ HQ|KWIK\ SERV|GAS\ 4\ LESS|TOYOTA\ FINANCIAL)\b'), 'DRIVER OPERATIONS - BAY'),
     (re.compile(r'(?i)\b(?:MORGAN\ AT\ PROVOST|SPIRIT\ AIRLINES|MORGAN\ AT\ PROVOST\ SQUARE|UNITED)\b'), 'EXECUTIVE'),
@@ -39,7 +91,7 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
 # Fields concatenated to build the searchable text.
 # Order matters; we include outputs of previous rulebooks to simplify patterns.
 _SOURCE_COLS = [
-    "payee_vendor",
+    "payee_vendor", "bank_account_cc", "amount", "cf_account",
 ]
 
 # ---------------------------------------------------------------------------
@@ -51,14 +103,77 @@ def _normalize_text(s: str) -> str:
     s = s.upper().strip()
     return " ".join(s.split())
 
+_POSTPROCESS_SOURCE = "postprocess"
+
 def _concat_row(row: Dict) -> str:
     parts: List[str] = []
     for c in _SOURCE_COLS:
-        v = row.get(c, "")
-        if v is None:
-            v = ""
-        parts.append(str(v))
-    return _normalize_text(" | ".join([p for p in parts if p]))
+        v = row.get(c, "") or ""
+        v = str(v)
+        if v.strip():
+            parts.append(f"{c.upper()}: {v}")
+    return _normalize_text(" | ".join(parts))
+
+def postprocess(df: "pd.DataFrame") -> "pd.DataFrame":  # type: ignore
+    if df is None or df.empty:
+        return df
+
+    need = {"payee_vendor", "bank_account_cc", "amount", "dashboard_1"}
+    if not need.issubset(df.columns):
+        return df
+
+    out = df.copy()
+    amt = pd.to_numeric(out["amount"], errors="coerce")
+    payee = out["payee_vendor"].fillna("").astype(str).str.upper()
+    acct = out["bank_account_cc"].fillna("").astype(str).str.upper()
+    cf = out["cf_account"].fillna("").astype(str).str.upper() if "cf_account" in out.columns else pd.Series([""] * len(out))
+
+    def stamp(mask, value, rule_id: str):
+        if not mask.any():
+            return
+        out.loc[mask, "dashboard_1"] = value
+        if "dashboard_1_rule_tag" in out.columns:
+            out.loc[mask, "dashboard_1_rule_tag"] = f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rule_id}"
+        if "dashboard_1_source" in out.columns:
+            out.loc[mask, "dashboard_1_source"] = _POSTPROCESS_SOURCE
+        if "dashboard_1_confidence" in out.columns:
+            out.loc[mask, "dashboard_1_confidence"] = 1.0
+
+    aer = payee.eq("AEROPAY")
+    stamp(aer & acct.eq("DAMA 5597") & (amt > 0), "NO DEPARTMENT", "pp-aeropay-dama-5597-pos")
+    stamp(aer & acct.eq("DAMA 5597") & (amt < 0), "FINANCE", "pp-aeropay-dama-5597-neg")
+
+    stamp(aer & acct.eq("KP 6852") & (amt > 0), "NO DEPARTMENT", "pp-aeropay-kp-6852-pos")
+    stamp(aer & acct.eq("KP 6852") & (amt < 0), "FINANCE", "pp-aeropay-kp-6852-neg")
+
+    stamp(aer & acct.eq("NBCU 2035") & (amt > 0), "NO DEPARTMENT", "pp-aeropay-nbcu-2035-pos")
+    stamp(aer & acct.eq("NBCU 2035") & (amt < 0), "FINANCE", "pp-aeropay-nbcu-2035-neg")
+
+    stamp(aer & acct.eq("NBCU SWD") & (amt > 0), "NO DEPARTMENT", "pp-aeropay-nbcu-swd-pos")
+    stamp(aer & acct.eq("NBCU SWD") & (amt < 0), "FINANCE", "pp-aeropay-nbcu-swd-neg")
+
+    arm = payee.eq("ARMORED CAR")
+    stamp(arm & (amt > 0), "NO DEPARTMENT", "pp-armored-car-pos")
+    stamp(arm & (amt < 0), "FINANCE", "pp-armored-car-neg")
+
+    bud = payee.eq("BUD TECHNOLOGY")
+    stamp(bud & (amt > 0), "NO DEPARTMENT", "pp-bud-technology-pos")
+    stamp(bud & (amt < 0), "SUBLIME", "pp-bud-technology-neg")
+
+    oss = payee.eq("OSS")
+    stamp(oss & (amt > 0), "NO DEPARTMENT", "pp-oss-pos")
+    stamp(oss & (amt < 0), "FINANCE", "pp-oss-neg")
+
+    odoo = payee.eq("ODOO B2B") & acct.eq("EWB 3447") & (amt > 0)
+    stamp(odoo, "NO DEPARTMENT", "pp-odoo-b2b-ewb-3447-pos")
+
+    blaze = payee.eq("BLAZE") & (amt.abs() == 1050.00)
+    stamp(blaze, "TECHNOLOGY", "pp-blaze-1050")
+
+    xev = payee.eq("XEVEN SOLUTIONS") & (amt.abs() == 3200.00)
+    stamp(xev, "MARKETING", "pp-xeven-3200")
+
+    return out
 
 def _rule_tag(i: int, custom: str | None) -> str:
     """
@@ -131,4 +246,4 @@ def apply_rules_df(df) -> "pd.DataFrame":  # type: ignore
     out["dashboard_1_rule_tag"] = tags
     out["dashboard_1_confidence"] = confs
     out["dashboard_1_source"] = srcs
-    return out
+    return postprocess(out)
