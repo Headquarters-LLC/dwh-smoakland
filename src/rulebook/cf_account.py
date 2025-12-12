@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Iterable, Tuple, List, Dict
 import re
+import pandas as pd
 
 """
 cf_account rulebook
@@ -15,7 +16,7 @@ cf_account rulebook
 """
 
 RULEBOOK_NAME = "cf_account"
-RULEBOOK_VERSION = "2025.10.03"   # <-- update when rules change
+RULEBOOK_VERSION = "2025.12.13"   # <-- update when rules change
 UNKNOWN = "UNKNOWN"
 
 # ---------------------------------------------------------------------------
@@ -23,6 +24,38 @@ UNKNOWN = "UNKNOWN"
 # Optionally provide a human-friendly id; if omitted the ordinal index is used.
 # ---------------------------------------------------------------------------
 _RULES: List[Tuple[re.Pattern, str, str | None]] = [
+    # CC Payment (explicit)
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCHASE\s+CREDIT\s+CRD\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), '2. CC PAYMENT', 'new-chase-credit-crd-dama-7403'),
+
+    # Licenses & Permits (EWB 3447 condition row)
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bEWB\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+3447\b'), '6. LICENSES & PERMITS', 'new-ewb-ewb-3447'),
+
+    # Distribution DMD via specific bank
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCIRCLE\s+MUSKRAT\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '1. DISTRIBUTION DMD', 'new-circle-muskrat-ewb-8452'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCURRENCY\s+AND\s+COIN\s+DEPOSITED\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '1. DISTRIBUTION DMD', 'new-currency-coin-ewb-8452'),
+
+    # Transfer via bank
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bHAH\s+7\s+CA\s+LLC\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '2. TRANSFER', 'new-hah-7-ca-llc-ewb-8452'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bSMOAKLAND\s+WEED\s+DELIVERY\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '2. TRANSFER', 'new-smoakland-weed-delivery-ewb-8452'),
+
+    # Payroll by bank
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bGUSTO\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+5597\b'), '4. PAYROLL SOCAL', 'new-gusto-dama-5597'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bGUSTO\b.*\bBANK_ACCOUNT_CC:[^|]*\bKP\s+6852\b'), '4. PAYROLL HAH', 'new-gusto-kp-6852'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bGUSTO\b.*\bBANK_ACCOUNT_CC:[^|]*\bCC\s+9551\b|\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+2211\b'), '4. PAYROLL SUB', 'new-gusto-sub-2211'),
+
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bEWB\s+8452\b'), '4. PAYROLL DMD', 'new-paynw-ewb-8452'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bKP\s+6852\b'), '4. PAYROLL HAH', 'new-paynw-kp-6852'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+2035\b'), '4. PAYROLL DMD', 'new-paynw-nbcu-2035'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bPAYNW\b.*\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+SWD\b'), '4. PAYROLL DMD', 'new-paynw-nbcu-swd'),
+
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bWURK\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), '4. PAYROLL DMD', 'new-wurk-dama-7403'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bWURK\b.*\bBANK_ACCOUNT_CC:[^|]*\bNBCU\s+SWD\b'), '4. PAYROLL DMD', 'new-wurk-nbcu-swd'),
+
+    # NY Expense (NEW bucket)
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bCHANG\s+YI\b.*\bBANK_ACCOUNT_CC:[^|]*\bDAMA\s+7403\b'), '8. NY EXPENSE', 'new-chang-yi-dama-7403'),
+    (re.compile(r'(?i)\bPAYEE_VENDOR:[^|]*\bMARCO\s+FEI\b'), '8. NY EXPENSE', 'new-marco-fei-ny-expense'),
+
+    # General rules
     (re.compile(r'(?i)(?<![A-Z0-9])(?:CALITA\ INC\.|ALKHEMIST\ DM\ LLC|SUMMIT\ LOCATIONS\ TRANSFER\ 240104\ 4ZN2A7PJMYQD|ODOO\ B2B|PCF\ DISTRO)(?![A-Z0-9])'), '1. DISTRIBUTION'),
     (re.compile(r'(?i)\b(?:CURRENCY\ AND\ COIN\ DEPOSITED|BRYANT\ AND\ GILBE|AREA\ 29\ LLC|ANTIOCH\ LLC|MONTEREY\ LLC|MANTECA\ LLC|OTC\ INDIO\ LLC|MOM\ GO\ LLC|SONOMA\ CHO\ LLC|SYLMAR\ LLC|HILIFE\ GROUP|KIM\ INVESTMENTS|THE\ NORDHOFF\ COM|OTC\ VAN\ NUYS|ASHS\ FIRST\ LLC)\b'), '1. DISTRIBUTION DMD'),
     (re.compile(r'(?i)\b(?:HAPPY\ DAYS\ DISPENSARY\ INC|NSEW\ TRADING\ COMPANY\ LLC|GUARDIAN\ WELLNESS|TWENTY8GRAMZ|NUCLEUS\ DISPENSARY|FRESHLY\ BAKED\ NYC|EXIT\ 31\ EXOTIC)\b'), '1. DISTRIBUTION NY'),
@@ -55,9 +88,8 @@ _RULES: List[Tuple[re.Pattern, str, str | None]] = [
 ]
 
 # Which fields we concatenate to form the searchable text.
-# Order matters; we include payee_vendor if already resolved by a previous rulebook.
 _SOURCE_COLS = [
-    "payee_vendor",
+    "payee_vendor", 'bank_account_cc', 'amount',
 ]
 
 # ---------------------------------------------------------------------------
@@ -72,11 +104,11 @@ def _normalize_text(s: str) -> str:
 def _concat_row(row: Dict) -> str:
     parts: List[str] = []
     for c in _SOURCE_COLS:
-        v = row.get(c, "")
-        if v is None:
-            v = ""
-        parts.append(str(v))
-    return _normalize_text(" | ".join([p for p in parts if p]))
+        v = row.get(c, "") or ""
+        v = str(v)
+        if v.strip():
+            parts.append(f"{c.upper()}: {v}")
+    return _normalize_text(" | ".join(parts))
 
 def _rule_tag(i: int, custom: str | None) -> str:
     """
@@ -86,6 +118,76 @@ def _rule_tag(i: int, custom: str | None) -> str:
     """
     rid = custom if (custom and custom.strip()) else str(i)
     return f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rid}"
+
+_POSTPROCESS_SOURCE = "postprocess"
+
+def postprocess(df: "pd.DataFrame") -> "pd.DataFrame":  # type: ignore
+    if df is None or df.empty:
+        return df
+
+    need = {"payee_vendor", "bank_account_cc", "amount", "cf_account"}
+    if not need.issubset(df.columns):
+        return df
+
+    out = df.copy()
+    amt = pd.to_numeric(out["amount"], errors="coerce")
+    payee = out["payee_vendor"].fillna("").astype(str).str.upper()
+    acct = out["bank_account_cc"].fillna("").astype(str).str.upper()
+
+    def stamp(mask, value, rule_id: str):
+        if not mask.any():
+            return
+        out.loc[mask, "cf_account"] = value
+        if "cf_account_rule_tag" in out.columns:
+            out.loc[mask, "cf_account_rule_tag"] = f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rule_id}"
+        if "cf_account_source" in out.columns:
+            out.loc[mask, "cf_account_source"] = _POSTPROCESS_SOURCE
+        if "cf_account_confidence" in out.columns:
+            out.loc[mask, "cf_account_confidence"] = 1.0
+
+    # --- Aeropay by bank + sign ---
+    aer = payee.eq("AEROPAY")
+
+    stamp(aer & acct.eq("DAMA 5597") & (amt > 0), "1. RETAIL SOCAL", "pp-aeropay-dama-5597-pos")
+    stamp(aer & acct.eq("DAMA 5597") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-dama-5597-neg")
+
+    stamp(aer & acct.eq("KP 6852") & (amt > 0), "1. RETAIL HAH", "pp-aeropay-kp-6852-pos")
+    stamp(aer & acct.eq("KP 6852") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-kp-6852-neg")
+
+    stamp(aer & acct.eq("NBCU 2035") & (amt > 0), "1. RETAIL DMD", "pp-aeropay-nbcu-2035-pos")
+    stamp(aer & acct.eq("NBCU 2035") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-nbcu-2035-neg")
+
+    stamp(aer & acct.eq("NBCU SWD") & (amt > 0), "1. RETAIL DMD", "pp-aeropay-nbcu-swd-pos")
+    stamp(aer & acct.eq("NBCU SWD") & (amt < 0), "6. BANK CHARGES & FEES", "pp-aeropay-nbcu-swd-neg")
+
+    # --- Armored Car sign ---
+    arm = payee.eq("ARMORED CAR")
+    stamp(arm & (amt > 0), "1. RETAIL DMD", "pp-armored-car-pos")
+    stamp(arm & (amt < 0), "6. BANK CHARGES & FEES", "pp-armored-car-neg")
+
+    # --- Bud Technology sign ---
+    bud = payee.eq("BUD TECHNOLOGY")
+    stamp(bud & (amt > 0), "1. DISTRIBUTION DMD", "pp-bud-technology-pos")
+    stamp(bud & (amt < 0), "5. OTHER COGS", "pp-bud-technology-neg")
+
+    # --- OSS sign ---
+    oss = payee.eq("OSS")
+    stamp(oss & (amt > 0), "1. RETAIL HAH", "pp-oss-pos")
+    stamp(oss & (amt < 0), "6. BANK CHARGES & FEES", "pp-oss-neg")
+
+    # --- Odoo B2B + EWB 3447 + positive ---
+    odoo = payee.eq("ODOO B2B") & acct.eq("EWB 3447") & (amt > 0)
+    stamp(odoo, "1. DISTRIBUTION DMD", "pp-odoo-b2b-ewb-3447-pos")
+
+    # --- Blaze exact ±1050 -> Apps & Software ---
+    blaze = payee.eq("BLAZE") & (amt.abs() == 1050.00)
+    stamp(blaze, "6. APPS & SOFTWARE", "pp-blaze-1050")
+
+    # --- Xeven Solutions exact ±3200 -> Marketing ---
+    xev = payee.eq("XEVEN SOLUTIONS") & (amt.abs() == 3200.00)
+    stamp(xev, "6. MARKETING", "pp-xeven-3200")
+
+    return out
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -113,13 +215,11 @@ def infer(row: Dict) -> Tuple[str, str]:
 
     return (UNKNOWN, "")
 
-def apply_rules_df(df) -> "pd.DataFrame":  # type: ignore
+def apply_rules_df(df) -> "pd.DataFrame":
     """
     Vectorized convenience that produces 4 columns:
       cf_account, cf_account_rule_tag, cf_account_confidence, cf_account_source
-    (Same semantics the universal resolver will add.)
     """
-    import pandas as pd  # local import to keep this module light if pandas isn't needed
 
     values: List[str] = []
     tags: List[str] = []
@@ -144,4 +244,4 @@ def apply_rules_df(df) -> "pd.DataFrame":  # type: ignore
     out["cf_account_rule_tag"] = tags
     out["cf_account_confidence"] = confs
     out["cf_account_source"] = srcs
-    return out
+    return postprocess(out)

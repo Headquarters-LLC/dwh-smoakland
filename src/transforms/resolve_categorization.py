@@ -29,11 +29,11 @@ REALME_CLIENT_NAME_MAP: Dict[str, str] = {
 
 # Import each rulebook's row-level API (infer)
 from rulebook.payee_vendor import infer as infer_payee_vendor, postprocess as postprocess_payee_vendor
-from rulebook.cf_account import infer as infer_cf_account
-from rulebook.dashboard_1 import infer as infer_dashboard_1
+from rulebook.cf_account import infer as infer_cf_account, postprocess as postprocess_cf_account
+from rulebook.dashboard_1 import infer as infer_dashboard_1, postprocess as postprocess_dashboard_1
 from rulebook.budget_owner import infer as infer_budget_owner
 from rulebook.entity_qbo import infer as infer_entity_qbo
-from rulebook.qbo_account import infer as infer_qbo_account
+from rulebook.qbo_account import infer as infer_qbo_account, postprocess as postprocess_qbo_account
 from rulebook.qbo_sub_account import infer as infer_qbo_sub_account
 
 # ---------------------------------------------------------------------------
@@ -256,6 +256,12 @@ def categorize_week(gold_week: pd.DataFrame) -> pd.DataFrame:
         out = _apply_resolver(out, col, infer_fn)
         if col == "payee_vendor":
             out = postprocess_payee_vendor(out)
+        if col == "cf_account":
+            out = postprocess_cf_account(out)
+        if col == "dashboard_1":
+            out = postprocess_dashboard_1(out)
+        if col == "qbo_account":
+            out = postprocess_qbo_account(out)
 
     if "entity_qbo" not in out.columns:
         out["entity_qbo"] = pd.NA
