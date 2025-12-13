@@ -40,7 +40,7 @@ Phase 2 now adds a QuickBooks export path:
    cp .env.example .env
    # Edit .env and set AIRFLOW_GATEWAY_PASSWORD to a strong 32+ char string
    ```
-   Admin creds stay fixed for the FinOps team: `AIRFLOW_ADMIN_USER=hq_finops_admin`, `AIRFLOW_ADMIN_PASSWORD=HQ-FinOps-2026-automations-!`. The gateway user (`AIRFLOW_GATEWAY_USER=hq_finops_gateway`) is the only account that should be used by the ingestion gateway for Basic Auth calls.
+   Admin creds stay fixed for the FinOps team. The gateway user is the only account that should be used by the ingestion gateway for Basic Auth calls.
 
 2. **Install Docker Desktop** (Linux/macOS/Windows with WSL2).  
    Make sure it has at least **4GB RAM** allocated.
@@ -72,8 +72,8 @@ Phase 2 now adds a QuickBooks export path:
 
 7. **Access Airflow UI**:
    - URL: [http://localhost:8080](http://localhost:8080)  
-   - User: value of `AIRFLOW_ADMIN_USER` from `.env` (`hq_finops_admin`)  
-   - Password: value of `AIRFLOW_ADMIN_PASSWORD` from `.env` (`HQ-FinOps-2026-automations-!`)
+   - User: value of `AIRFLOW_ADMIN_USER` from `.env`
+   - Password: value of `AIRFLOW_ADMIN_PASSWORD` from `.env`
 
 8. **Smoke-test the REST API with the gateway bot user**:
    ```bash
