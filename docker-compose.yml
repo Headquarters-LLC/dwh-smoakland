@@ -24,6 +24,8 @@ services:
     image: smoakland-airflow:local
     depends_on:
       - postgres
+    env_file:
+      - .env
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -41,7 +43,6 @@ services:
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
       - ./tests:/opt/airflow/tests
-      - ./.env:/opt/airflow/.env:ro
       - ./airflow_config:/opt/airflow/airflow_config:ro
       - ../data_input:/shared/input
     ports:
@@ -53,6 +54,8 @@ services:
     image: smoakland-airflow:local
     depends_on:
       - airflow-webserver
+    env_file:
+      - .env
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -68,7 +71,6 @@ services:
       - ./data_samples:/opt/airflow/data_samples
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
-      - ./.env:/opt/airflow/.env:ro
       - ./airflow_config:/opt/airflow/airflow_config:ro
       - ../data_input:/shared/input
     command: scheduler
@@ -78,6 +80,8 @@ services:
     image: smoakland-airflow:local
     depends_on:
       - airflow-webserver
+    env_file:
+      - .env
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -102,6 +106,8 @@ services:
     image: smoakland-airflow:local
     depends_on:
       - postgres
+    env_file:
+      - .env
     environment:
       # Executor is set by overrides (LocalExecutor or CeleryExecutor)
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -110,7 +116,7 @@ services:
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
       AIRFLOW__CORE__HOSTNAME_CALLABLE: airflow.utils.net.get_host_ip_address
       AIRFLOW_VAR_SHARED_INPUT_FOLDER: /shared/input
-      
+
     volumes:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
@@ -119,12 +125,22 @@ services:
       - ./airflow_config:/opt/airflow/airflow_config:ro
       - ../data_input:/shared/input
     entrypoint: /bin/bash
-    command: >
-      -c "airflow db migrate &&
-          airflow variables import /opt/airflow/airflow_config/airflow_vars.json &&
-          airflow connections import /opt/airflow/airflow_config/airflow_conns.json &&
-          airflow users create --username airflow --password airflow --firstname admin --lastname user --role Admin --email admin@example.com &&
-          echo 'Airflow init done.'"
+    command:
+      - -c
+      - |
+        : "${AIRFLOW_ADMIN_USER:?Missing AIRFLOW_ADMIN_USER}"
+        : "${AIRFLOW_ADMIN_PASSWORD:?Missing AIRFLOW_ADMIN_PASSWORD}"
+        : "${AIRFLOW_GATEWAY_USER:?Missing AIRFLOW_GATEWAY_USER}"
+        : "${AIRFLOW_GATEWAY_PASSWORD:?Missing AIRFLOW_GATEWAY_PASSWORD}"
+
+        airflow db migrate &&
+        airflow variables import /opt/airflow/airflow_config/airflow_vars.json &&
+        airflow connections import /opt/airflow/airflow_config/airflow_conns.json &&
+        airflow users delete --username "$AIRFLOW_ADMIN_USER" >/dev/null 2>&1 || true &&
+        airflow users create --username "$AIRFLOW_ADMIN_USER" --password "$AIRFLOW_ADMIN_PASSWORD" --firstname HQ --lastname "FinOps Admin" --role Admin --email "${AIRFLOW_ADMIN_USER}@example.com" &&
+        airflow users delete --username "$AIRFLOW_GATEWAY_USER" >/dev/null 2>&1 || true &&
+        airflow users create --username "$AIRFLOW_GATEWAY_USER" --password "$AIRFLOW_GATEWAY_PASSWORD" --firstname HQ --lastname "Gateway Bot" --role Op --email "${AIRFLOW_GATEWAY_USER}@example.com" &&
+        echo 'Airflow init done.'
 
 volumes:
   postgres-db-volume:
