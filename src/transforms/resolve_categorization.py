@@ -35,6 +35,7 @@ from rulebook.budget_owner import infer as infer_budget_owner
 from rulebook.entity_qbo import infer as infer_entity_qbo
 from rulebook.qbo_account import infer as infer_qbo_account, postprocess as postprocess_qbo_account
 from rulebook.qbo_sub_account import infer as infer_qbo_sub_account
+from utils.titlecase import smart_title_case
 
 # ---------------------------------------------------------------------------
 # Configuration: which columns we resolve and with which rulebook.
@@ -112,6 +113,10 @@ CATEG_COLS: List[str] = [
     "bank_cc_num",
     "txn_id",
     "realme_client_name",
+]
+
+TITLECASE_RULEBOOK_COLS: List[str] = [
+    col for col, _ in RESOLVERS if col not in {"entity_qbo", "qbo_sub_account"}
 ]
 
 def _ensure_columns(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
@@ -266,6 +271,13 @@ def categorize_week(gold_week: pd.DataFrame) -> pd.DataFrame:
     if "entity_qbo" not in out.columns:
         out["entity_qbo"] = pd.NA
     out["realme_client_name"] = _derive_realme_client_name(out["entity_qbo"])
+
+    # Apply smart title casing to resolved rulebook outputs (post-rulebooks).
+    for col in TITLECASE_RULEBOOK_COLS:
+        if col in out.columns:
+            out[col] = out[col].apply(
+                lambda v: smart_title_case(v) if isinstance(v, str) else v
+            )
 
     # Ensure final schema (adds NA for any missing columns)
     out = _ensure_columns(out, CATEG_COLS)
