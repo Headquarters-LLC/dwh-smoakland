@@ -420,7 +420,7 @@ def postprocess(df: "pd.DataFrame") -> "pd.DataFrame":  # type: ignore
     def stamp(mask, value, rule_id: str):
         if not mask.any():
             return
-        out.loc[mask, "qbo_account"] = value
+        out.loc[mask, "qbo_account"] = (value or "").upper()
         if "qbo_account_rule_tag" in out.columns:
             out.loc[mask, "qbo_account_rule_tag"] = f"{RULEBOOK_NAME}@{RULEBOOK_VERSION}#{rule_id}"
         if "qbo_account_source" in out.columns:
@@ -508,7 +508,7 @@ def infer(row: Dict) -> Tuple[str, str]:
             if not value:
                 # Blank value = unresolved (UNKNOWN)
                 return (UNKNOWN, "")
-            return (value, _rule_tag(i, custom_id))
+            return (value.upper(), _rule_tag(i, custom_id))
 
     # No matches found
     return (UNKNOWN, "")

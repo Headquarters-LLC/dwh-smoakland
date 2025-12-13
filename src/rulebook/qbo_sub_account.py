@@ -77,7 +77,7 @@ def infer(row: Dict) -> Tuple[str, str]:
             value = (resolved or "").strip()
             if not value:
                 return (UNKNOWN, "")
-            return (value, _rule_tag(i, custom_id))
+            return (value.upper(), _rule_tag(i, custom_id))
 
     return (UNKNOWN, "")
 
