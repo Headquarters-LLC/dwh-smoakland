@@ -35,10 +35,17 @@ Phase 2 now adds a QuickBooks export path:
 
 ## Quickstart
 
-1. **Install Docker Desktop** (Linux/macOS/Windows with WSL2).  
+1. **Create your Airflow `.env`** (admin for UI, gateway bot for the REST API):
+   ```bash
+   cp .env.example .env
+   # Edit .env and set AIRFLOW_GATEWAY_PASSWORD to a strong 32+ char string
+   ```
+   Admin creds stay fixed for the FinOps team: `AIRFLOW_ADMIN_USER=hq_finops_admin`, `AIRFLOW_ADMIN_PASSWORD=HQ-FinOps-2026-automations-!`. The gateway user (`AIRFLOW_GATEWAY_USER=hq_finops_gateway`) is the only account that should be used by the ingestion gateway for Basic Auth calls.
+
+2. **Install Docker Desktop** (Linux/macOS/Windows with WSL2).  
    Make sure it has at least **4GB RAM** allocated.
 
-2. **Set your Airflow UID** (required for permissions):
+3. **Set your Airflow UID** (required for permissions):
 
    - Linux/macOS:
      ```bash
@@ -49,27 +56,44 @@ Phase 2 now adds a QuickBooks export path:
      setx AIRFLOW_UID 50000
      ```
 
-3. **Bootstrap Airflow metadata DB and create the admin user**:
+4. **Ensure config bundle is present**: the `airflow_config/` folder must contain `airflow_vars.json`, `airflow_conns.json`, and `airflow_meta.sql`. Copy it over if you are setting up a fresh machine.
+
+5. **Bootstrap Airflow metadata DB, imports, and users**:
    ```bash
    docker compose up airflow-init
    ```
 
-4. **Start the full stack**:
+6. **Start the full stack**:
    ```bash
    docker compose up -d --build
    ```
    Local:
    docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.gmail.yml up -d
 
-5. **Access Airflow UI**:
+7. **Access Airflow UI**:
    - URL: [http://localhost:8080](http://localhost:8080)  
-   - User: `airflow`  
-   - Password: `airflow`
+   - User: value of `AIRFLOW_ADMIN_USER` from `.env` (`hq_finops_admin`)  
+   - Password: value of `AIRFLOW_ADMIN_PASSWORD` from `.env` (`HQ-FinOps-2026-automations-!`)
+
+8. **Smoke-test the REST API with the gateway bot user**:
+   ```bash
+   # Health
+   curl -u "$AIRFLOW_GATEWAY_USER:$AIRFLOW_GATEWAY_PASSWORD" http://localhost:8080/api/v1/health
+
+   # Trigger DAG runs with non-conflicting IDs
+   curl -u "$AIRFLOW_GATEWAY_USER:$AIRFLOW_GATEWAY_PASSWORD" -X POST http://localhost:8080/api/v1/dags/part1_ingestion/dagRuns \
+     -H 'Content-Type: application/json' \
+     -d '{"dag_run_id":"api_manual_part1_'"$(date +%s)"'","conf":{}}'
+
+   curl -u "$AIRFLOW_GATEWAY_USER:$AIRFLOW_GATEWAY_PASSWORD" -X POST http://localhost:8080/api/v1/dags/part2_qbo_export/dagRuns \
+     -H 'Content-Type: application/json' \
+     -d '{"dag_run_id":"api_manual_part2_'"$(date +%s)"'","conf":{}}'
+   ```
 
 ### Restoring preconfigured Airflow data
 
 - All exported **Variables**, **Connections**, and a Postgres **metadata dump** live in `airflow_config/`.
-- `docker compose up airflow-init` now imports `airflow_config/airflow_vars.json` and `airflow_config/airflow_conns.json` automatically after migrations/user creation.
+- `docker compose up airflow-init` now imports `airflow_config/airflow_vars.json` and `airflow_config/airflow_conns.json` automatically after migrations/user creation. Admin/gateway users are created or updated from `.env`.
 - The Postgres container mounts `airflow_config/airflow_meta.sql` to `/docker-entrypoint-initdb.d`, so the dump seeds a fresh metadata DB the next time the volume is empty.  
   - To force a restore, drop the existing volume and re-run init:
     ```bash
@@ -80,30 +104,38 @@ Phase 2 now adds a QuickBooks export path:
 
 ## VPS deployment + Stable REST API
 
-1. Copy the repo to the VPS and set `AIRFLOW_UID` for your user (`export AIRFLOW_UID=$(id -u)`).
-2. Seed Airflow metadata (roles, admin user, Variables/Connections) from the bundled dump:
+1. Copy the repo to the VPS, set `AIRFLOW_UID` for your user (`export AIRFLOW_UID=$(id -u)`), and create `.env` with the Airflow credentials:
+   ```bash
+   cp .env.example .env
+   # Set AIRFLOW_GATEWAY_PASSWORD to a strong random 32+ char string; keep the provided admin creds
+   ```
+2. Ensure `airflow_config/` contains `airflow_vars.json`, `airflow_conns.json`, and `airflow_meta.sql` (copy from your local checkout if needed).
+3. (Optional) Reset the metadata volume for a clean restore:
    ```bash
    docker compose down -v  # only if you need a clean restore
+   ```
+4. Bootstrap the DB, Variables/Connections, and users:
+   ```bash
    docker compose up airflow-init
    ```
-   The Postgres container automatically restores `airflow_config/airflow_meta.sql`; `airflow-init` then runs migrations and imports Variables/Connections.
-3. Start Airflow with the desired profile (local or celery):
+   The Postgres container automatically restores `airflow_config/airflow_meta.sql`; `airflow-init` then runs migrations, imports Variables/Connections, and upserts the admin + gateway users.
+5. Start Airflow with the desired profile (local or celery):
    ```bash
    docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml up -d --build
    # or include other overrides (gmail/celery) as needed
    ```
-4. API auth is preconfigured in `docker-compose.yml` (`AIRFLOW__WEBSERVER__AUTHENTICATE`, `AIRFLOW__WEBSERVER__RBAC`, `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session`). The metadata dump restores the `airflow` admin user and its Admin role permissions for API and UI access.
-5. Test the Stable REST API with Basic Auth (`airflow` / `airflow`):
+6. API auth is preconfigured in `docker-compose.yml` (`AIRFLOW__WEBSERVER__AUTHENTICATE`, `AIRFLOW__WEBSERVER__RBAC`, `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session`). Use the gateway bot for API calls; reserve the admin user for UI-only access.
+7. Test the Stable REST API with Basic Auth (gateway user):
    ```bash
    # Health
-   curl -u airflow:airflow http://<host>:8080/api/v1/health
+   curl -u "$AIRFLOW_GATEWAY_USER:$AIRFLOW_GATEWAY_PASSWORD" http://<host>:8080/api/v1/health
 
    # Trigger DAG runs with non-conflicting IDs
-   curl -u airflow:airflow -X POST http://<host>:8080/api/v1/dags/part1_ingestion/dagRuns \
+   curl -u "$AIRFLOW_GATEWAY_USER:$AIRFLOW_GATEWAY_PASSWORD" -X POST http://<host>:8080/api/v1/dags/part1_ingestion/dagRuns \
      -H 'Content-Type: application/json' \
      -d '{"dag_run_id":"api_manual_part1_'"$(date +%s)"'","conf":{}}'
 
-   curl -u airflow:airflow -X POST http://<host>:8080/api/v1/dags/part2_qbo_export/dagRuns \
+   curl -u "$AIRFLOW_GATEWAY_USER:$AIRFLOW_GATEWAY_PASSWORD" -X POST http://<host>:8080/api/v1/dags/part2_qbo_export/dagRuns \
      -H 'Content-Type: application/json' \
      -d '{"dag_run_id":"api_manual_part2_'"$(date +%s)"'","conf":{}}'
    ```
@@ -193,9 +225,9 @@ Phase 2 now adds a QuickBooks export path:
 
 ## Environment & Config
 
-- Copy `.env.example` → `.env` for **local-only settings**.  
+- Copy `.env.example` → `.env` for **local-only settings** (admin UI user + gateway bot credentials + any other overrides).  
   ⚠️ **Never commit secrets**.
-- The `.env` file provides notification-specific values (email list + Slack webhook) consumed by docker-compose overrides like `docker-compose.mailhog.yml`.
+- The `.env` file is consumed by docker-compose (Airflow users) and by overrides like `docker-compose.mailhog.yml` (notification settings).
 
 - In production: configure **Airflow Connections & Variables** instead of using `.env`.
 
