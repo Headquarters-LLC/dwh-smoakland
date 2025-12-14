@@ -139,7 +139,7 @@ services:
         airflow users delete --username "$AIRFLOW_ADMIN_USER" >/dev/null 2>&1 || true &&
         airflow users create --username "$AIRFLOW_ADMIN_USER" --password "$AIRFLOW_ADMIN_PASSWORD" --firstname HQ --lastname "FinOps Admin" --role Admin --email "${AIRFLOW_ADMIN_USER}@example.com" &&
         airflow users delete --username "$AIRFLOW_GATEWAY_USER" >/dev/null 2>&1 || true &&
-        airflow users create --username "$AIRFLOW_GATEWAY_USER" --password "$AIRFLOW_GATEWAY_PASSWORD" --firstname HQ --lastname "Gateway Bot" --role Op --email "${AIRFLOW_GATEWAY_USER}@example.com" &&
+        airflow users create --username "$AIRFLOW_GATEWAY_USER" --password "$AIRFLOW_GATEWAY_PASSWORD" --firstname HQ --lastname "Gateway Bot" --role Admin --email "${AIRFLOW_GATEWAY_USER}@example.com" &&
         echo 'Airflow init done.'
 
 volumes:
