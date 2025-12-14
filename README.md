@@ -56,7 +56,9 @@ Phase 2 now adds a QuickBooks export path:
      setx AIRFLOW_UID 50000
      ```
 
-4. **Ensure config bundle is present**: the `airflow_config/` folder must contain `airflow_vars.json`, `airflow_conns.json`, and `airflow_meta.sql`. Copy it over if you are setting up a fresh machine.
+4. **Ensure config bundle is present**: the `airflow_config/` folder must contain `airflow_vars.json`, `airflow_conns.json`, optionally `airflow_meta.sql`. Copy it over if you are setting up a fresh machine.
+
+airflow_meta.sql is optional. Airflow will initialize and migrate the metadata DB via airflow db migrate. Only use airflow_meta.sql if you intentionally want to seed Postgres with a prebuilt dump
 
 5. **Bootstrap Airflow metadata DB, imports, and users**:
    ```bash
@@ -64,10 +66,10 @@ Phase 2 now adds a QuickBooks export path:
    ```
 
 6. **Start the full stack**:
-   ```bash
-   docker compose up -d --build
-   ```
    Local:
+   docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml up -d --build
+
+   If you want to force implicit SSL on port 465:
    docker compose --profile local -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.gmail.yml up -d
 
 7. **Access Airflow UI**:
@@ -150,7 +152,7 @@ Phase 2 now adds a QuickBooks export path:
   4) Folder hint via `try_week_from_path`
 - `part1_ingestion` optional conf fields:  
   - `week_year`, `week_num` (override week)  
-  - `input_subdir` (joined under `INPUT_FOLDER` for CSV lookup)  
+  - `input_subdir` If input_subdir is present, gateway mode uses SHARED_INPUT_FOLDER + input_subdir.
   - `client_id`, `notify_email` (carried in resolved week_info for downstream consumers)  
 - `part2_qbo_export` optional conf fields:  
   - `week_year`, `week_num` (override week)
