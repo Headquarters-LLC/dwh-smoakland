@@ -33,6 +33,7 @@ with DAG(
     catchup=False,
     default_args=DEFAULT_ARGS,
     tags=["part2", "qbo"],
+    max_active_runs=1,
 ) as dag:
 
     @task()
