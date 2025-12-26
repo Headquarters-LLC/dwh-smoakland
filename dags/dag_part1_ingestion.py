@@ -419,4 +419,6 @@ with DAG(
     categorized >> success_email
 
     cleanup = cleanup_gateway_input(run_params)
-    [categorized, recon_notify] >> cleanup
+    # Ensure the gateway cleanup doesn't remove the run folder before the success
+    # notification has a chance to write/attach artifacts.
+    [categorized, recon_notify, success_email] >> cleanup
